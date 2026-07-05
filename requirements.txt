@@ -7,3 +7,4 @@ pandas
 gunicorn
 python-dotenv
 logzero
+websocket-client
