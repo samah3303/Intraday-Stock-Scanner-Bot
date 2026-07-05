@@ -1,9 +1,11 @@
 """
 Angel One Intraday Scanner – Flask Application
 ================================================
-Two independent strategy scanners with Telegram push alerts:
-  • Strategy A — Structural OEL (6-rule filter on curated stocks)
-  • Strategy B — OEL First Candle Breakout (broad NSE scan, 1:1.43 R:R)
+Unified dual-strategy scanner with Telegram push alerts:
+  • Strategy A — Structural OEL (6-rule filter)
+  • Strategy B — OEL First Candle Breakout (1:1.43 R:R)
+
+Single scan pass: fetches candle data once per stock, applies both filters.
 """
 
 import os
@@ -42,23 +44,20 @@ app = Flask(__name__)
 # Global State
 # ---------------------------------------------------------------------------
 BOT_STATUS = "Stopped"
-smart_api = None  # SmartConnect session object
-NSE_STOCKS = {}   # {symbol: token} — populated from instrument master
+smart_api = None      # SmartConnect session object
+NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
 
 # ---------------------------------------------------------------------------
-# Stock Universe & Constants
+# Constants
 # ---------------------------------------------------------------------------
-# Strategy A — curated stock list
-STOCK_TOKENS = {
-    "INFY": "1594",
-    "RELIANCE": "2885",
-    "SBIN": "3045",
-}
 NIFTY_TOKEN = "99926000"
 
-# Strategy B — OEL Breakout constants
+# Scan limits
+MAX_SCAN_STOCKS = 750         # Max stocks to scan per run
+MAX_STOCK_PRICE = 500         # Only scan stocks priced ≤ this value
+
+# Strategy B — OEL Breakout R:R
 OEL_RR_RATIO = 1.43
-OEL_MAX_SCAN = 1500  # Max stocks to scan per run (safety cap)
 
 # ---------------------------------------------------------------------------
 # Telegram Helper
@@ -86,19 +85,17 @@ def send_telegram(message: str) -> None:
 
 
 def send_telegram_long(message: str) -> None:
-    """Send a long message, splitting into chunks if it exceeds Telegram's 4096 char limit."""
+    """Send a long message, splitting into chunks if >4096 chars."""
     if len(message) <= 4096:
         send_telegram(message)
         return
-
-    # Split on newlines, keeping chunks under 4000 chars
     lines = message.split("\n")
     chunk = ""
     for line in lines:
         if len(chunk) + len(line) + 1 > 4000:
             send_telegram(chunk)
             chunk = line + "\n"
-            time.sleep(0.5)  # Brief pause between chunks
+            time.sleep(0.5)
         else:
             chunk += line + "\n"
     if chunk.strip():
@@ -106,7 +103,7 @@ def send_telegram_long(message: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Instrument Master (NSE Stock Universe for Strategy B)
+# Instrument Master (NSE Stock Universe)
 # ---------------------------------------------------------------------------
 
 def fetch_instrument_master() -> None:
@@ -134,7 +131,8 @@ def fetch_instrument_master() -> None:
         logger.info("Instrument master loaded: %d NSE EQ stocks.", len(NSE_STOCKS))
         send_telegram(
             f"📋 *Instrument master loaded*\n"
-            f"_{len(NSE_STOCKS)} NSE stocks ready for OEL Breakout scan._"
+            f"_{len(NSE_STOCKS)} NSE stocks available "
+            f"(scanning up to {MAX_SCAN_STOCKS}, ≤₹{MAX_STOCK_PRICE})_"
         )
     except Exception as exc:
         logger.error("Instrument master fetch failed: %s", exc)
@@ -172,7 +170,7 @@ def automate_angel_login() -> None:
             logger.info("Angel One login successful for %s", client_code)
             send_telegram("🟢 *Angel One Login Successful* – Bot is now *Running*.")
 
-            # Load NSE stock universe for Strategy B
+            # Load NSE stock universe
             fetch_instrument_master()
         else:
             raise RuntimeError(data.get("message", "Unknown login failure"))
@@ -191,7 +189,7 @@ def automate_angel_login() -> None:
 def fetch_candles(token: str, exchange: str = "NSE",
                   days_back: int = 2) -> pd.DataFrame:
     """
-    Fetch 5-minute candle data for *today* and the previous trading day
+    Fetch 5-minute candle data for today and the previous trading day
     and return a clean DataFrame.
     """
     if smart_api is None:
@@ -230,27 +228,21 @@ def fetch_candles(token: str, exchange: str = "NSE",
 #  STRATEGY A — Structural OEL (6 Rules)
 # ===========================================================================
 
-def evaluate_stock(stock_name: str, token: str,
-                   nifty_df: pd.DataFrame) -> str | None:
+def evaluate_strategy_a(stock_name: str, df: pd.DataFrame,
+                        nifty_candle: pd.Series) -> str | None:
     """
-    Evaluate a single stock against the six filter rules.
+    Evaluate a stock against Strategy A's six filter rules.
+    Accepts pre-fetched DataFrame to avoid duplicate API calls.
     Returns a formatted result string if all rules pass, else None.
     """
-    try:
-        df = fetch_candles(token)
-    except Exception as exc:
-        logger.warning("Skipping %s – %s", stock_name, exc)
-        return None
-
     today = datetime.now().date()
 
     # ── Isolate today's 09:15 candle ──────────────────────────────────
     today_candles = df[df["timestamp"].dt.date == today]
     if today_candles.empty:
-        logger.info("%s: No today candles found.", stock_name)
         return None
 
-    candle = today_candles.iloc[0]  # First 5-min candle → 09:15
+    candle = today_candles.iloc[0]
     c_open, c_high, c_low, c_close = (
         candle["open"], candle["high"], candle["low"], candle["close"],
     )
@@ -258,19 +250,13 @@ def evaluate_stock(stock_name: str, token: str,
     # ── Previous day's last candle ────────────────────────────────────
     prev_candles = df[df["timestamp"].dt.date < today]
     if prev_candles.empty:
-        logger.info("%s: No previous-day candles.", stock_name)
         return None
     prev_last = prev_candles.iloc[-1]
 
-    # ── Nifty 09:15 candle ────────────────────────────────────────────
-    nifty_today = nifty_df[nifty_df["timestamp"].dt.date == today]
-    if nifty_today.empty:
-        return None
-    nifty_candle = nifty_today.iloc[0]
-
     # ── 20-EMA ────────────────────────────────────────────────────────
-    df["ema20"] = df["close"].ewm(span=20, adjust=False).mean()
-    ema_row = df[df["timestamp"] == candle["timestamp"]]
+    df_copy = df.copy()
+    df_copy["ema20"] = df_copy["close"].ewm(span=20, adjust=False).mean()
+    ema_row = df_copy[df_copy["timestamp"] == candle["timestamp"]]
     if ema_row.empty:
         return None
     ema_value = ema_row.iloc[0]["ema20"]
@@ -293,8 +279,8 @@ def evaluate_stock(stock_name: str, token: str,
     if upper_wick > 0.50 * candle_range:
         return None
 
-    # ── RULE 4: Price range 300 – 3000 ───────────────────────────────
-    if not (300 <= c_close <= 3000):
+    # ── RULE 4: Price range 50 – 500 ────────────────────────────────
+    if not (50 <= c_close <= 500):
         return None
 
     # ── RULE 5: Market-trend alignment (Nifty bullish) ───────────────
@@ -312,61 +298,17 @@ def evaluate_stock(stock_name: str, token: str,
     )
 
 
-def run_strategy_scan() -> None:
-    """Run Strategy A — Structural OEL scan across curated stocks."""
-    global BOT_STATUS
-
-    if BOT_STATUS != "Running":
-        logger.info("Strategy A scan skipped – bot status is '%s'.", BOT_STATUS)
-        return
-
-    logger.info("── Strategy A scan started ──")
-    send_telegram("🔍 *Strategy A — Structural OEL scan started…*")
-
-    try:
-        nifty_df = fetch_candles(NIFTY_TOKEN, exchange="NSE", days_back=2)
-    except Exception as exc:
-        logger.error("Cannot fetch Nifty data: %s", exc)
-        send_telegram(f"🔴 *Nifty data error (Strategy A)*\n`{exc}`")
-        return
-
-    results: list[str] = []
-    for name, token in STOCK_TOKENS.items():
-        hit = evaluate_stock(name, token, nifty_df)
-        if hit:
-            results.append(hit)
-
-    if results:
-        body = "\n".join(results)
-        msg = (
-            f"🔍 *Strategy A — Structural OEL*\n"
-            f"📅 *{datetime.now():%d %b %Y}*\n\n"
-            f"{body}\n\n"
-            f"_6-Rule Filter: Open=Low+Support | Bullish | "
-            f"Wick≤50% | ₹300-3K | Nifty↑ | >20EMA_"
-        )
-    else:
-        msg = "🔍 *Strategy A* — No matching tickers met filters today."
-
-    send_telegram(msg)
-    logger.info("── Strategy A scan complete (%d hits) ──", len(results))
-
-
 # ===========================================================================
-#  STRATEGY B — OEL First Candle Breakout (Broad NSE Scan)
+#  STRATEGY B — OEL First Candle Breakout
 # ===========================================================================
 
-def evaluate_oel_stock(stock_name: str, token: str,
-                       nifty_candle: pd.Series) -> str | None:
+def evaluate_strategy_b(stock_name: str, df: pd.DataFrame,
+                        nifty_candle: pd.Series) -> str | None:
     """
-    Evaluate a single stock for OEL First Candle Breakout.
+    Evaluate a stock for OEL First Candle Breakout.
+    Accepts pre-fetched DataFrame to avoid duplicate API calls.
     Returns a formatted string with Entry/SL/TGT if criteria pass, else None.
     """
-    try:
-        df = fetch_candles(token, days_back=2)
-    except Exception:
-        return None
-
     today = datetime.now().date()
 
     # ── Today's first 5-min candle (09:15) ────────────────────────────
@@ -400,17 +342,13 @@ def evaluate_oel_stock(stock_name: str, token: str,
     if upper_wick > 0.60 * candle_range:
         return None
 
-    # ── RULE 5: Price range ₹50 – ₹5,000 ────────────────────────────
-    if not (50 <= c_close <= 5000):
-        return None
-
-    # ── RULE 6: Nifty bullish (market-trend alignment) ───────────────
+    # ── RULE 5: Nifty bullish (market-trend alignment) ───────────────
     if nifty_candle["close"] <= nifty_candle["open"]:
         return None
 
     # ── Compute SL / Target ──────────────────────────────────────────
     entry = c_close
-    sl = c_low       # = Open (since Open ≈ Low)
+    sl = c_low
     risk = entry - sl
     if risk <= 0:
         return None
@@ -427,96 +365,167 @@ def evaluate_oel_stock(stock_name: str, token: str,
     )
 
 
-def run_oel_scan() -> None:
-    """Run Strategy B — OEL Breakout scan across NSE universe."""
+# ===========================================================================
+#  UNIFIED SCAN — Single pass, dual strategy
+# ===========================================================================
+
+def run_unified_scan() -> None:
+    """
+    Scan NSE stocks once, apply both Strategy A and Strategy B filters
+    on the same candle data. Sends two separate Telegram alerts.
+    """
     global BOT_STATUS
 
     if BOT_STATUS != "Running":
-        logger.info("OEL scan skipped – bot status is '%s'.", BOT_STATUS)
+        logger.info("Scan skipped – bot status is '%s'.", BOT_STATUS)
         return
 
     if not NSE_STOCKS:
-        logger.warning("OEL scan skipped – instrument master not loaded.")
-        send_telegram("⚠️ *Strategy B skipped* — NSE stock list not loaded.")
+        logger.warning("Scan skipped – instrument master not loaded.")
+        send_telegram("⚠️ *Scan skipped* — NSE stock list not loaded.")
         return
 
-    scan_count = min(len(NSE_STOCKS), OEL_MAX_SCAN)
-    logger.info("── Strategy B (OEL Breakout) scan started (%d stocks) ──", scan_count)
+    logger.info("── Unified dual-strategy scan started ──")
     send_telegram(
-        f"📊 *Strategy B — OEL Breakout scan started…*\n"
-        f"_Scanning {scan_count} NSE stocks_"
+        f"🔄 *Dual-strategy scan started…*\n"
+        f"_Scanning up to {MAX_SCAN_STOCKS} NSE stocks (≤₹{MAX_STOCK_PRICE})_"
     )
 
-    # ── Fetch Nifty data first ────────────────────────────────────────
+    # ── Fetch Nifty data ──────────────────────────────────────────────
     try:
         nifty_df = fetch_candles(NIFTY_TOKEN, exchange="NSE", days_back=2)
     except Exception as exc:
-        logger.error("Cannot fetch Nifty data for OEL scan: %s", exc)
-        send_telegram(f"🔴 *Nifty data error (Strategy B)*\n`{exc}`")
+        logger.error("Cannot fetch Nifty data: %s", exc)
+        send_telegram(f"🔴 *Nifty data error*\n`{exc}`")
         return
 
     today = datetime.now().date()
     nifty_today = nifty_df[nifty_df["timestamp"].dt.date == today]
     if nifty_today.empty:
-        send_telegram("📊 *Strategy B* — No Nifty data for today yet.")
+        send_telegram("⚠️ *Scan aborted* — No Nifty data for today yet.")
         return
 
     nifty_candle = nifty_today.iloc[0]
 
-    # Early exit: if Nifty is bearish, no OEL setups
+    # Early exit if Nifty is bearish (both strategies require bullish Nifty)
     if nifty_candle["close"] <= nifty_candle["open"]:
-        send_telegram("📊 *Strategy B* — Nifty bearish on first candle, no OEL setups today.")
-        logger.info("OEL scan skipped — Nifty bearish.")
+        send_telegram(
+            "🔍 *Strategy A* — Nifty bearish, no setups today.\n\n"
+            "📊 *Strategy B* — Nifty bearish, no setups today."
+        )
+        logger.info("Scan skipped — Nifty bearish on first candle.")
         return
 
-    # ── Scan all NSE stocks ───────────────────────────────────────────
-    results: list[str] = []
+    # ── Scan stocks ───────────────────────────────────────────────────
+    hits_a: list[str] = []
+    hits_b: list[str] = []
     scanned = 0
-    errors = 0
+    in_range = 0
 
-    stock_items = list(NSE_STOCKS.items())[:OEL_MAX_SCAN]
+    stock_items = list(NSE_STOCKS.items())
 
     for name, token in stock_items:
-        # Skip stocks already covered by Strategy A
-        if name in STOCK_TOKENS:
+        if scanned >= MAX_SCAN_STOCKS:
+            break
+
+        # Fetch candle data once
+        try:
+            df = fetch_candles(token, days_back=2)
+        except Exception:
             scanned += 1
+            time.sleep(0.15)
             continue
 
-        hit = evaluate_oel_stock(name, token, nifty_candle)
-        if hit:
-            results.append(hit)
+        # Check today's data exists
+        today_candles = df[df["timestamp"].dt.date == today]
+        if today_candles.empty:
+            scanned += 1
+            time.sleep(0.15)
+            continue
+
+        first_candle_close = today_candles.iloc[0]["close"]
+
+        # Price filter: only stocks ≤ MAX_STOCK_PRICE
+        if first_candle_close > MAX_STOCK_PRICE:
+            scanned += 1
+            time.sleep(0.15)
+            continue
+
+        in_range += 1
+
+        # ── Apply Strategy A ─────────────────────────────────────────
+        try:
+            hit_a = evaluate_strategy_a(name, df, nifty_candle)
+            if hit_a:
+                hits_a.append(hit_a)
+        except Exception as exc:
+            logger.debug("Strategy A error for %s: %s", name, exc)
+
+        # ── Apply Strategy B ─────────────────────────────────────────
+        try:
+            hit_b = evaluate_strategy_b(name, df, nifty_candle)
+            if hit_b:
+                hits_b.append(hit_b)
+        except Exception as exc:
+            logger.debug("Strategy B error for %s: %s", name, exc)
 
         scanned += 1
+
+        # Progress logging
         if scanned % 100 == 0:
             logger.info(
-                "OEL scan progress: %d/%d scanned, %d hits so far",
-                scanned, scan_count, len(results),
+                "Scan progress: %d/%d scanned | A:%d B:%d hits",
+                scanned, MAX_SCAN_STOCKS, len(hits_a), len(hits_b),
             )
 
-        # Rate limiting — ~7 calls/sec to stay within API limits
+        # Rate limiting
         time.sleep(0.15)
 
-    # ── Send results ──────────────────────────────────────────────────
-    if results:
-        body = "\n".join(results)
-        msg = (
+    # ── Send Strategy A results ───────────────────────────────────────
+    if hits_a:
+        body_a = "\n".join(hits_a)
+        msg_a = (
+            f"🔍 *Strategy A — Structural OEL*\n"
+            f"📅 *{datetime.now():%d %b %Y}*\n\n"
+            f"{body_a}\n\n"
+            f"_6-Rule Filter: Open=Low+Support | Bullish | "
+            f"Wick≤50% | ₹50-500 | Nifty↑ | >20EMA_\n"
+            f"_Scanned {scanned} stocks ({in_range} in price range)_"
+        )
+    else:
+        msg_a = (
+            f"🔍 *Strategy A — Structural OEL*\n"
+            f"No matching tickers met all 6 filters today.\n"
+            f"_Scanned {scanned} stocks ({in_range} ≤₹{MAX_STOCK_PRICE})_"
+        )
+
+    send_telegram_long(msg_a)
+    time.sleep(1)
+
+    # ── Send Strategy B results ───────────────────────────────────────
+    if hits_b:
+        body_b = "\n".join(hits_b)
+        msg_b = (
             f"📊 *Strategy B — OEL Breakout*\n"
             f"📅 *{datetime.now():%d %b %Y}*\n"
             f"_Open=Low First Candle Breakout | R:R 1:{OEL_RR_RATIO}_\n\n"
-            f"{body}\n\n"
-            f"✅ *{len(results)} stocks* passed filters "
-            f"(scanned {scanned})"
+            f"{body_b}\n\n"
+            f"✅ *{len(hits_b)} stocks* passed filters "
+            f"(scanned {scanned}, {in_range} in range)"
         )
     else:
-        msg = (
+        msg_b = (
             f"📊 *Strategy B — OEL Breakout*\n"
-            f"No setups found today (scanned {scanned} stocks)."
+            f"No OEL setups found today.\n"
+            f"_Scanned {scanned} stocks ({in_range} ≤₹{MAX_STOCK_PRICE})_"
         )
 
-    send_telegram_long(msg)
+    send_telegram_long(msg_b)
+
     logger.info(
-        "── Strategy B scan complete (%d hits, %d scanned, %d errors) ──",
-        len(results), scanned, errors,
+        "── Unified scan complete: A=%d hits, B=%d hits, "
+        "scanned=%d, in_range=%d ──",
+        len(hits_a), len(hits_b), scanned, in_range,
     )
 
 
@@ -535,22 +544,12 @@ scheduler.add_job(
     misfire_grace_time=300,
 )
 
-# Strategy A — Structural OEL scan every weekday at 09:18 IST
+# Unified dual-strategy scan every weekday at 09:20 IST
 scheduler.add_job(
-    run_strategy_scan,
-    CronTrigger(day_of_week="mon-fri", hour=9, minute=18,
+    run_unified_scan,
+    CronTrigger(day_of_week="mon-fri", hour=9, minute=20,
                 timezone="Asia/Kolkata"),
-    id="strategy_a_scan",
-    replace_existing=True,
-    misfire_grace_time=300,
-)
-
-# Strategy B — OEL Breakout scan every weekday at 09:22 IST
-scheduler.add_job(
-    run_oel_scan,
-    CronTrigger(day_of_week="mon-fri", hour=9, minute=22,
-                timezone="Asia/Kolkata"),
-    id="strategy_b_oel_scan",
+    id="unified_scan",
     replace_existing=True,
     misfire_grace_time=300,
 )
@@ -681,7 +680,6 @@ CONTROL_PANEL_HTML = r"""
       border-radius: 50%;
       display: inline-block;
     }
-    /* Conditional badge colors */
     .badge--running  { background: rgba(34,197,94,.12); color: #4ade80; }
     .badge--running .dot  { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
     .badge--stopped  { background: rgba(239,68,68,.12); color: #f87171; }
@@ -827,12 +825,12 @@ CONTROL_PANEL_HTML = r"""
       <div class="strat-tag strat-tag--a">
         <div class="tag-label">Strategy A</div>
         <div class="tag-name">Structural OEL</div>
-        <div class="tag-detail">6-Rule Filter &middot; 09:18 IST</div>
+        <div class="tag-detail">6-Rule Filter</div>
       </div>
       <div class="strat-tag strat-tag--b">
         <div class="tag-label">Strategy B</div>
         <div class="tag-name">OEL Breakout</div>
-        <div class="tag-detail">1:1.43 R:R &middot; 09:22 IST</div>
+        <div class="tag-detail">R:R 1:1.43</div>
       </div>
     </div>
 
@@ -849,19 +847,19 @@ CONTROL_PANEL_HTML = r"""
         <div class="value">08:45 IST</div>
       </div>
       <div class="info-card">
-        <div class="label">Scan A</div>
-        <div class="value">09:18 IST</div>
+        <div class="label">Scan Time</div>
+        <div class="value">09:20 IST</div>
       </div>
       <div class="info-card">
-        <div class="label">Scan B</div>
-        <div class="value">09:22 IST</div>
+        <div class="label">Max Stocks</div>
+        <div class="value">750</div>
       </div>
       <div class="info-card">
-        <div class="label">Stocks (A)</div>
-        <div class="value">{{ stock_count_a }}</div>
+        <div class="label">Price Cap</div>
+        <div class="value">&le;&#8377;500</div>
       </div>
       <div class="info-card">
-        <div class="label">NSE Universe</div>
+        <div class="label">NSE Loaded</div>
         <div class="value">{{ nse_count }}</div>
       </div>
       <div class="info-card">
@@ -890,7 +888,6 @@ def index():
     return render_template_string(
         CONTROL_PANEL_HTML,
         status=BOT_STATUS,
-        stock_count_a=len(STOCK_TOKENS),
         nse_count=len(NSE_STOCKS) if NSE_STOCKS else "—",
         server_time=datetime.now().strftime("%H:%M:%S IST"),
     )

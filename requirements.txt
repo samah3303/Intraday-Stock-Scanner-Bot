@@ -6,3 +6,4 @@ pyotp
 pandas
 gunicorn
 python-dotenv
+logzero
