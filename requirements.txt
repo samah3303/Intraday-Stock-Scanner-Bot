@@ -1,0 +1,8 @@
+flask
+smartapi-python
+apscheduler
+requests
+pyotp
+pandas
+gunicorn
+python-dotenv
