@@ -844,10 +844,10 @@ CONTROL_PANEL_HTML = r"""
     <div class="card">
       <div class="header">
         <div class="header-left">
-          <div class="icon">📈</div>
+          <div class="icon">🤖</div>
           <div class="title">
-            <h1>Structural OEL Intraday Scanner</h1>
-            <p>Angel One SmartAPI &middot; Telegram Group Push Alerts</p>
+            <h1>Structural OEL + DeepSeek AI Scanner</h1>
+            <p>Angel One SmartAPI &middot; DeepSeek AI Engine &middot; Telegram Group Alerts</p>
           </div>
         </div>
         <div>
@@ -873,6 +873,10 @@ CONTROL_PANEL_HTML = r"""
         <div class="info-card">
           <div class="label">Scheduled Time</div>
           <div class="value">09:20 AM IST</div>
+        </div>
+        <div class="info-card">
+          <div class="label">DeepSeek AI Engine</div>
+          <div class="value" style="color: #38bdf8; font-size: 0.85rem;">🤖 Active (v3/v4)</div>
         </div>
         <div class="info-card">
           <div class="label">Latest Scan Status</div>
@@ -995,7 +999,7 @@ CONTROL_PANEL_HTML = r"""
     <!-- STRATEGY RULES OVERVIEW CARD -->
     <div class="card">
       <div class="section-title">
-        <span>⚙️ Active Filter Strategy Rules (6/6)</span>
+        <span>⚙️ Active Filter Strategy Rules &amp; DeepSeek AI Engine</span>
       </div>
       <div class="rules-list">
         <div class="rule-item">
@@ -1022,11 +1026,15 @@ CONTROL_PANEL_HTML = r"""
           <strong>6. Trend Confirmation (20 EMA)</strong>
           Today's 09:15 AM Close &gt; 20-period EMA on 5-minute chart.
         </div>
+        <div class="rule-item" style="border-left-color: #38bdf8; background: rgba(56, 189, 248, 0.08);">
+          <strong style="color: #38bdf8;">🧠 7. DeepSeek AI Risk &amp; Setup Engine</strong>
+          Scores quality (0–100), calculates limit entry, structural SL, 1:2 &amp; 1:3 R:R targets, and generates AI technical justification.
+        </div>
       </div>
     </div>
 
     <footer>
-      JABIR Scanner &middot; Powered by Angel One SmartAPI &amp; Flask
+      JABIR Scanner &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; Flask
     </footer>
   </div>
 
