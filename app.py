@@ -28,14 +28,33 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 # ---------------------------------------------------------------------------
-# Logging Configuration
+# Logging & In-Memory Log Ring Buffer (for Dashboard Live Terminal UI)
 # ---------------------------------------------------------------------------
+SYSTEM_LOGS: list[str] = []
+
+class MemoryLogHandler(logging.Handler):
+    """Custom logging handler to keep the last 150 log entries in memory for dashboard UI."""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            SYSTEM_LOGS.append(msg)
+            if len(SYSTEM_LOGS) > 150:
+                SYSTEM_LOGS.pop(0)
+        except Exception:
+            pass
+
+log_formatter = logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+memory_handler = MemoryLogHandler()
+memory_handler.setFormatter(log_formatter)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+logger.addHandler(memory_handler)
+logging.getLogger().addHandler(memory_handler)
 
 # ---------------------------------------------------------------------------
 # Flask App Setup
@@ -1044,6 +1063,15 @@ CONTROL_PANEL_HTML = r"""
       </div>
     </div>
 
+    <!-- REAL-TIME SYSTEM LOGS TERMINAL CARD -->
+    <div class="card">
+      <div class="section-title">
+        <span>📜 Real-Time System Logs</span>
+        <button class="btn btn--clear" style="min-width: auto; padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="fetchDashboardLogs()">🔄 Refresh Logs</button>
+      </div>
+      <div style="background: #060913; border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 0.65rem; padding: 1rem; font-family: monospace; font-size: 0.78rem; color: #a7f3d0; max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;" id="logTerminal">Loading system logs...</div>
+    </div>
+
     <footer>
       JABIR Scanner &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; Flask
     </footer>
@@ -1138,8 +1166,28 @@ CONTROL_PANEL_HTML = r"""
       }
     }
 
+    async function fetchDashboardLogs() {
+      try {
+        const resp = await fetch('/api/logs');
+        const data = await resp.json();
+        if (data.status === 'success' && data.logs) {
+          const terminal = document.getElementById('logTerminal');
+          if (data.logs.length === 0) {
+            terminal.textContent = 'No system logs recorded yet.';
+          } else {
+            terminal.textContent = data.logs.join('\n');
+            terminal.scrollTop = terminal.scrollHeight;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch logs:', err);
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       fetchStocksData();
+      fetchDashboardLogs();
+      setInterval(fetchDashboardLogs, 4000);
 
       const input = document.getElementById('stockSearchInput');
       const optionsDiv = document.getElementById('stockDropdownOptions');
@@ -1276,6 +1324,12 @@ def clear_stocks_api():
 def get_results():
     """JSON API endpoint returning latest scan results."""
     return jsonify(LATEST_SCAN_RESULTS)
+
+
+@app.route("/api/logs")
+def get_logs_api():
+    """JSON API endpoint returning recent in-memory system logs."""
+    return jsonify({"status": "success", "logs": SYSTEM_LOGS})
 
 
 @app.route("/healthz")
