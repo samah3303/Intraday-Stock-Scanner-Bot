@@ -67,23 +67,43 @@ app = Flask(__name__)
 BOT_STATUS = "Stopped"
 smart_api = None      # SmartConnect session object
 NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
+# Default 100 Top Liquid Bullish NSE Stock Universe
+DEFAULT_100_STOCKS = [
+    "ABB", "ADANIENT", "ADANIPORTS", "AMBUJACEM", "APOLLOHOSP", "ASIANPAINT", "AUBANK", "AXISBANK",
+    "BAJAJ-AUTO", "BAJAJFINSV", "BAJFINANCE", "BANKBARODA", "BEL", "BERGEPAINT", "BHARATFORG", "BHARTIARTL",
+    "BPCL", "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COLPAL",
+    "CONCOR", "CUMMINSIND", "DIVISLAB", "DLF", "DRREDDY", "EICHERMOT", "FEDERALBNK", "GAIL",
+    "GODREJPROP", "GRASIM", "HAL", "HAVELLS", "HCLTECH", "HDFCBANK", "HEROMOTOCO", "HINDALCO",
+    "ICICIBANK", "ICICIPRULI", "IDFCFIRSTB", "INDIGO", "INDUSINDBK", "INFY", "IOC", "IRCTC",
+    "JINDALSTEL", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "LT", "LTIM", "MANAPPURAM", "MARUTI",
+    "MAXHEALTH", "MOTHERSON", "MUTHOOTFIN", "M&M", "NAUKRI", "NESTLEIND", "NTPC", "OFSS",
+    "ONGC", "PERSISTENT", "PFC", "PIDILITIND", "PNB", "POLYCAB", "POWERGRID", "RECLTD",
+    "RELIANCE", "SBIN", "SHRIRAMFIN", "SIEMENS", "SRF", "SUNPHARMA", "TATACONSUM", "TATAELXSI",
+    "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT",
+    "TVSMOTOR", "ULTRACEMCO", "UNITDSPR", "VARROC", "VBL", "VOLTAS", "WESTLIFE", "WIPRO", "ZEEMEDIA", "ZOMATO"
+]
+
 # Target /tmp on Vercel/serverless environments to avoid read-only file system errors
 SELECTED_STOCKS_FILE = os.path.join("/tmp" if os.getenv("VERCEL") else os.path.dirname(__file__), "selected_stocks.json")
-SELECTED_STOCKS: list[str] = []  # Custom watchlist stocks to scan
+SELECTED_STOCKS: list[str] = list(DEFAULT_100_STOCKS)  # Custom watchlist stocks to scan
 
 
 def load_selected_stocks() -> list[str]:
-    """Load user selected stock symbols from local JSON file."""
+    """Load user selected stock symbols from local JSON file or fallback to DEFAULT_100_STOCKS."""
     global SELECTED_STOCKS
     if os.path.exists(SELECTED_STOCKS_FILE):
         try:
             with open(SELECTED_STOCKS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data, list):
+                if isinstance(data, list) and len(data) > 0:
                     SELECTED_STOCKS = [str(s).upper().strip() for s in data if s]
                     logger.info("Loaded %d selected stock(s) from watchlist file.", len(SELECTED_STOCKS))
+                    return SELECTED_STOCKS
         except Exception as exc:
             logger.error("Failed to load selected_stocks.json: %s", exc)
+    
+    SELECTED_STOCKS = list(DEFAULT_100_STOCKS)
+    logger.info("Defaulted watchlist to %d top liquid bullish stocks.", len(SELECTED_STOCKS))
     return SELECTED_STOCKS
 
 
@@ -92,6 +112,8 @@ def save_selected_stocks(stocks: list[str]) -> bool:
     global SELECTED_STOCKS
     try:
         clean_stocks = sorted(list(set(str(s).upper().strip() for s in stocks if s)))
+        if not clean_stocks:
+            clean_stocks = list(DEFAULT_100_STOCKS)
         SELECTED_STOCKS = clean_stocks
         with open(SELECTED_STOCKS_FILE, "w", encoding="utf-8") as f:
             json.dump(SELECTED_STOCKS, f, indent=2)
