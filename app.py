@@ -48,7 +48,8 @@ app = Flask(__name__)
 BOT_STATUS = "Stopped"
 smart_api = None      # SmartConnect session object
 NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
-SELECTED_STOCKS_FILE = os.path.join(os.path.dirname(__file__), "selected_stocks.json")
+# Target /tmp on Vercel/serverless environments to avoid read-only file system errors
+SELECTED_STOCKS_FILE = os.path.join("/tmp" if os.getenv("VERCEL") else os.path.dirname(__file__), "selected_stocks.json")
 SELECTED_STOCKS: list[str] = []  # Custom watchlist stocks to scan
 
 
@@ -205,7 +206,17 @@ def automate_angel_login() -> None:
 
     try:
         totp = pyotp.TOTP(totp_key).now()
-        obj = SmartConnect(api_key=api_key)
+        
+        # SmartConnect attempts to create 'logs/' in current working directory.
+        # Temporarily switch working directory to /tmp on serverless environments to prevent Read-only file system errors.
+        old_cwd = os.getcwd()
+        try:
+            os.chdir("/tmp")
+            os.makedirs("/tmp/logs", exist_ok=True)
+            obj = SmartConnect(api_key=api_key)
+        finally:
+            os.chdir(old_cwd)
+
         data = obj.generateSession(client_code, password, totp)
 
         if data.get("status"):
