@@ -194,7 +194,7 @@ def automate_angel_login() -> None:
 
     api_key = os.getenv("ANGEL_API_KEY")
     client_code = os.getenv("ANGEL_CLIENT_CODE")
-    password = os.getenv("ANGEL_PASSWORD")
+    password = os.getenv("ANGEL_MPIN") or os.getenv("ANGEL_PIN") or os.getenv("ANGEL_PASSWORD")
     totp_key = os.getenv("ANGEL_TOTP_KEY")
 
     if not all([api_key, client_code, password, totp_key]):
