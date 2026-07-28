@@ -1073,7 +1073,7 @@ CONTROL_PANEL_HTML = r"""
     </div>
 
     <footer>
-      JABIR Scanner &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; Flask
+      AlphaQuant AI Scanner &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; Quantitative ML Engine
     </footer>
   </div>
 

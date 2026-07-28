@@ -1,24 +1,25 @@
-# 📈 JABIR — Angel One Intraday Stock Scanner with DeepSeek AI Engine
+# 📈 AlphaQuant AI — Quantitative Intraday Stock Scanner with DeepSeek & ML Engine
 
-A high-performance automated **Intraday Stock Scanner** built with Python, Flask, Angel One SmartAPI, APScheduler, Telegram Bot API, and **DeepSeek AI Reasoning Engine**.
+A high-performance automated **Intraday Stock Scanner** built with Python, Flask, Angel One SmartAPI, APScheduler, Telegram Bot API, **XGBoost Quantitative Machine Learning Engine**, and **DeepSeek AI Reasoning Engine**.
 
-The bot automatically logs into Angel One using TOTP 2FA, fetches live 5-minute candle data, scans top NSE universe stocks against a **6-Rule Structural OEL Strategy**, evaluates candidate setups through **DeepSeek AI**, and broadcasts actionable trade signals directly to Telegram group chats and a web dashboard UI.
+The system automatically authenticates with Angel One via TOTP 2FA, fetches live 5-minute candle data, scans top NSE universe stocks against a **6-Rule Structural OEL Strategy**, evaluates candidate setups through **AlphaQuant Machine Learning & DeepSeek AI**, and broadcasts high-probability trade signals to Telegram channels and a glassmorphic web control panel.
 
 ---
 
 ## 🌟 Key Features
 
-- **6-Rule Structural OEL Filter Strategy**: Mechanical technical filtering at 09:20 AM IST.
-- **DeepSeek AI Reasoning & Risk Engine**: Evaluates matching candidates to assign a **Confidence Score (0-100)**, **Buy Limit Entry**, **Stop Loss (SL)**, **Target 1 (1:2 R:R)**, **Target 2 (1:3 R:R)**, and concise **AI Trade Justification**.
-- **Telegram Group Alerts**: Markdown-formatted alerts sent directly to your Telegram trading channel.
-- **Glassmorphic Web Control Panel Dashboard**: Modern UI showing real-time stock ticker lists, AI score badges, trade plans, and custom watchlist manager.
-- **Resilient AI Fallback**: Operates smoothly with or without `DEEPSEEK_API_KEY` configured.
+- **6-Rule Structural OEL Strategy**: Mechanical technical filtering at 09:20 AM IST.
+- **DeepSeek AI Reasoning Engine**: Evaluates matching candidates to assign a **Confidence Score (0-100)**, **Buy Limit Entry**, **Stop Loss (SL)**, **Target 1 (1:2 R:R)**, **Target 2 (1:3 R:R)**, and **AI Technical Justifications**.
+- **Quantitative ML Pipeline (`ml_engine.py`)**: XGBoost & LightGBM classification model filtering trades with probability score $\ge 0.75$ using relative volume (RVOL), gap %, Level 2 orderbook imbalance, and Nifty momentum.
+- **Dynamic ATR Risk Management**: Replaces static R:R ratios with asset-specific ATR volatility sizing and dynamic position allocation.
+- **Telegram Group Alerts**: Markdown-formatted trade signals sent directly to your Telegram trading channel.
+- **Glassmorphic Web Control Panel & Live Logs**: Modern UI displaying real-time matching tickers, AI score badges, custom watchlist manager, and auto-refreshing system log terminal.
 
 ---
 
-## 📋 Filter Strategy Rules (6/6)
+## 📋 Filter Strategy Rules (6/6 Technical + DeepSeek & ML)
 
-A stock ticker must meet **all six conditions** at 09:20 AM IST to be flagged:
+A stock ticker must meet **all baseline conditions** at 09:20 AM IST to be evaluated:
 
 | # | Rule | Filter Logic & Formula |
 |---|---|---|
@@ -28,12 +29,13 @@ A stock ticker must meet **all six conditions** at 09:20 AM IST to be flagged:
 | 4 | **Price Universe Range** | `300 ≤ Close Price ≤ 3000` |
 | 5 | **Market Trend Alignment** | Nifty 50 Index 09:15 Close > Nifty 50 Index 09:15 Open |
 | 6 | **Trend Confirmation** | Today's 09:15 Close > 20-period EMA on 5-minute chart |
+| 🧠 7 | **DeepSeek & ML Risk Engine** | Quality scoring (0-100), dynamic Buy Limit, structural SL, 1:2 & 1:3 R:R targets, and AI justification |
 
 ---
 
-## 🧠 DeepSeek AI Trade Plan
+## 🧠 AlphaQuant AI Trade Signals
 
-Every stock passing the 6 structural rules is submitted to DeepSeek AI:
+Every stock passing structural rules is evaluated by DeepSeek AI & XGBoost:
 
 ```
 • RELIANCE 🔥 [HIGH] AI Score: 88/100
@@ -51,7 +53,8 @@ Every stock passing the 6 structural rules is submitted to DeepSeek AI:
 # Angel One SmartAPI Credentials
 ANGEL_API_KEY=your_angel_api_key
 ANGEL_CLIENT_CODE=your_client_code
-ANGEL_PASSWORD=your_password
+ANGEL_PASSWORD=your_4_digit_mpin
+ANGEL_MPIN=your_4_digit_mpin
 ANGEL_TOTP_KEY=your_totp_secret_key
 
 # Telegram Bot
@@ -70,7 +73,8 @@ DEEPSEEK_API_KEY=your_deepseek_api_key
 # Install dependencies
 pip install -r requirements.txt
 
-# Run testing scripts
+# Run ML & DeepSeek tests
+python ml_engine.py
 python test_deepseek.py
 python test_telegram.py
 
