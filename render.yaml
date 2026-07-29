@@ -7,7 +7,7 @@ services:
     runtime: python
     region: singapore  # Closest to NSE (India)
     plan: starter      # Upgrade to standard for production
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && cp -r .venv/lib/python3.11/site-packages/SmartApi .venv/lib/python3.11/site-packages/smartapi || true
     startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
     healthCheckPath: /healthz
     disk:
@@ -39,3 +39,4 @@ services:
       # ── Dashboard Auth (optional) ──
       - key: DASHBOARD_SECRET
         sync: false
+
