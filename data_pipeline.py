@@ -191,8 +191,10 @@ class DataSanityValidator:
         if df.empty:
             return False, ["DataFrame is completely empty."]
 
+        df_check = df.copy()  # Avoid mutating the input DataFrame
+
         min_p, max_p = expected_price_range
-        latest_close = float(df.iloc[-1]["close"])
+        latest_close = float(df_check.iloc[-1]["close"])
 
         # Check 1: Price Bounds Check
         if not (min_p <= latest_close <= max_p):
@@ -201,14 +203,14 @@ class DataSanityValidator:
             )
 
         # Check 2: High/Low/Open/Close Logical Consistency
-        invalid_candles = df[(df["high"] < df["low"]) | (df["open"] > df["high"]) | (df["open"] < df["low"]) | (df["close"] > df["high"]) | (df["close"] < df["low"])]
+        invalid_candles = df_check[(df_check["high"] < df_check["low"]) | (df_check["open"] > df_check["high"]) | (df_check["open"] < df_check["low"]) | (df_check["close"] > df_check["high"]) | (df_check["close"] < df_check["low"])]
         if not invalid_candles.empty:
             anomalies.append(f"LOGIC CORRUPTION: Found {len(invalid_candles)} candle(s) violating High >= Low logic.")
 
         # Check 3: Extreme Single-Bar Price Jump (>20% Gap Check)
-        df["prev_close"] = df["close"].shift(1)
-        df["pct_change"] = (df["open"] - df["prev_close"]).abs() / df["prev_close"]
-        extreme_jumps = df[df["pct_change"] > 0.20]
+        df_check["prev_close"] = df_check["close"].shift(1)
+        df_check["pct_change"] = (df_check["open"] - df_check["prev_close"]).abs() / df_check["prev_close"]
+        extreme_jumps = df_check[df_check["pct_change"] > 0.20]
         if not extreme_jumps.empty:
             anomalies.append(f"ANOMALY GAP: Detected {len(extreme_jumps)} bar(s) with >20% overnight gap.")
 

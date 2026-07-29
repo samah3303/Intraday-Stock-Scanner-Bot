@@ -4,6 +4,7 @@ apscheduler
 requests
 pyotp
 pandas
+numpy
 gunicorn
 python-dotenv
 logzero
