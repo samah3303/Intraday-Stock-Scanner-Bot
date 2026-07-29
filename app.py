@@ -14,6 +14,8 @@ import time
 import logging
 import traceback
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+IST = ZoneInfo('Asia/Kolkata')
 
 from dotenv import load_dotenv
 load_dotenv()  # Load .env file for local development
@@ -297,7 +299,7 @@ def fetch_candles(token: str, exchange: str = "NSE",
     if smart_api is None:
         raise RuntimeError("SmartAPI session not initialized.")
 
-    to_date = datetime.now()
+    to_date = datetime.now(IST)
     from_date = to_date - timedelta(days=days_back)
 
     params = {
@@ -341,7 +343,7 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
     5. MARKET TREND ALIGNMENT: Nifty 50 09:15 Close > Open
     6. TREND CONFIRMATION: Today's 09:15 Close > 20 EMA (5-min chart)
     """
-    today = datetime.now().date()
+    today = datetime.now(IST).date()
 
     # Today's 09:15 AM (first 5-minute) candle
     today_candles = df[df["timestamp"].dt.date == today]
@@ -435,7 +437,7 @@ def run_strategy_scan() -> None:
         send_telegram("⚠️ *Scan skipped* — NSE stock list not loaded.")
         return
 
-    scan_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+    scan_time_str = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
     logger.info("── Structural OEL 6-Rule scan started at %s ──", scan_time_str)
     send_telegram(
         f"🔄 *Intraday 6-Rule Scan Started…*\n"
@@ -450,7 +452,7 @@ def run_strategy_scan() -> None:
         send_telegram(f"🔴 *Nifty data fetch failed*\n`{exc}`")
         return
 
-    today = datetime.now().date()
+    today = datetime.now(IST).date()
     nifty_today = nifty_df[nifty_df["timestamp"].dt.date == today]
     if nifty_today.empty:
         send_telegram("⚠️ *Scan aborted* — No Nifty candle available for today yet.")
@@ -462,7 +464,7 @@ def run_strategy_scan() -> None:
     if float(nifty_candle["close"]) <= float(nifty_candle["open"]):
         msg_bearish = (
             f"🔍 *Structural OEL Scanner*\n"
-            f"📅 *{datetime.now():%d %b %Y %H:%M} IST*\n\n"
+            f"📅 *{datetime.now(IST):%d %b %Y %H:%M} IST*\n\n"
             f"⚠️ *Scan Aborted*: Nifty 50 benchmark is bearish on 09:15 candle "
             f"(Close {nifty_candle['close']} ≤ Open {nifty_candle['open']})."
         )
@@ -562,7 +564,7 @@ def run_strategy_scan() -> None:
         body = "\n\n".join(hit_lines)
         telegram_msg = (
             f"🎯 *DEEPSEEK AI MATCHING INTRADAY STOCKS*\n"
-            f"📅 *{datetime.now():%d %b %Y %H:%M} IST*\n\n"
+            f"📅 *{datetime.now(IST):%d %b %Y %H:%M} IST*\n\n"
             f"{body}\n\n"
             f"✅ *{len(matching_hits)} stock(s)* passed 6 rules + AI Evaluation.\n"
             f"_Universe scanned: {universe_str}_"
@@ -570,7 +572,7 @@ def run_strategy_scan() -> None:
     else:
         telegram_msg = (
             f"🔍 *Structural OEL Scan Completed*\n"
-            f"📅 *{datetime.now():%d %b %Y %H:%M} IST*\n\n"
+            f"📅 *{datetime.now(IST):%d %b %Y %H:%M} IST*\n\n"
             f"ℹ️ No stocks matched all 6 rules today.\n"
             f"_Scanned {universe_str}_"
         )
@@ -1325,3 +1327,4 @@ def healthz():
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
