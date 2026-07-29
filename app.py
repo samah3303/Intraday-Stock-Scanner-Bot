@@ -253,9 +253,7 @@ def automate_angel_login() -> None:
         
         # SmartConnect creates a 'logs/' directory in the current working directory.
         # Ensure we are in a writable directory (persistent if Render, /tmp if Vercel).
-        if os.getenv("RENDER"):
-            work_dir = "/var/data"
-        elif os.getenv("VERCEL"):
+        if os.getenv("RENDER") or os.getenv("VERCEL"):
             work_dir = "/tmp"
         else:
             work_dir = os.getcwd()
