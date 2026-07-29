@@ -325,10 +325,10 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
                       nifty_candle: pd.Series) -> dict | None:
     """
     Evaluate stock against the 6 strict filter rules:
-    1. OPEN = LOW & STRUCTURAL SUPPORT: Today's 09:15 Open == Low & Open == Prev Day Last 5-min Low
-    2. BULLISH CANDLE BODY: Today's 09:15 Close > Open
+    1. OPEN = LOW: Today's 09:15 Open == Low (0.05% tolerance)
+    2. BULLISH CANDLE BODY: Today's 09:15 Close > Open (Gap-Up or Bullish Open)
     3. MINIMAL UPPER REJECTION: Upper Wick <= 50% of Candle Range
-    4. PRICE RANGE: ₹300 <= Close <= ₹3000
+    4. PRICE RANGE: ₹300 <= Open <= ₹3000
     5. MARKET TREND ALIGNMENT: Nifty 50 09:15 Close > Open
     6. TREND CONFIRMATION: Today's 09:15 Close > 20 EMA (5-min chart)
     """
@@ -345,11 +345,11 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
         float(candle["low"]), float(candle["close"])
     )
 
-    # Previous day's last 5-minute candle
+    # Previous day's last 5-minute candle (for Gap-Up check)
     prev_candles = df[df["timestamp"].dt.date < today]
     if prev_candles.empty:
         return None
-    prev_last_low = float(prev_candles.iloc[-1]["low"])
+    prev_close = float(prev_candles.iloc[-1]["close"])
 
     # Compute 20-period EMA on 5-minute chart
     df_copy = df.copy()
@@ -359,15 +359,14 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
         return None
     ema_value = float(ema_row.iloc[0]["ema20"])
 
-    # ── RULE 1: Open == Low & Structural Support Alignment ─────────────
-    # Allow 0.05 tick size float tolerance
-    if not (c_open == c_low or abs(c_open - c_low) < 0.05):
-        return None
-    if not (c_open == prev_last_low or abs(c_open - prev_last_low) < 0.05):
+    # ── RULE 1: Open = Low (0.05% percentage tolerance) ────────────────
+    if c_open > 0 and ((c_open - c_low) / c_open) > 0.0005:
         return None
 
-    # ── RULE 2: Bullish Candle Body ────────────────────────────────────
+    # ── RULE 2: Bullish Candle Body + Gap-Up / Bullish Open ────────────
     if c_close <= c_open:
+        return None
+    if c_open <= prev_close:
         return None
 
     # ── RULE 3: Minimal Upper Rejection (Upper Wick Filter ≤ 50%) ─────
@@ -378,8 +377,8 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
     if upper_wick > (0.50 * candle_range):
         return None
 
-    # ── RULE 4: Price Range Filter (300 <= Price <= 3000) ──────────────
-    if not (MIN_STOCK_PRICE <= c_close <= MAX_STOCK_PRICE):
+    # ── RULE 4: Price Range Filter (300 <= Open <= 3000) ───────────────
+    if not (MIN_STOCK_PRICE <= c_open <= MAX_STOCK_PRICE):
         return None
 
     # ── RULE 5: Market Trend Alignment (Nifty Benchmark Bullish) ──────
@@ -392,13 +391,13 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
 
     wick_pct = (upper_wick / candle_range) * 100
 
-
     return {
         "symbol": stock_name,
         "open": round(c_open, 2),
         "high": round(c_high, 2),
         "low": round(c_low, 2),
         "close": round(c_close, 2),
+        "prev_close": round(prev_close, 2),
         "ema20": round(ema_value, 2),
         "wick_pct": round(wick_pct, 1),
     }
@@ -503,8 +502,14 @@ def run_strategy_scan() -> None:
     """Execute the 09:20 AM intraday scan across all universe stocks."""
     global BOT_STATUS, LATEST_SCAN_RESULTS
 
+    # Auto-login if session expired (critical for Vercel serverless cold starts)
+    if BOT_STATUS != "Running" or smart_api is None:
+        logger.info("Session not active (status='%s'). Auto-login triggered...", BOT_STATUS)
+        automate_angel_login()
+
     if BOT_STATUS != "Running":
-        logger.info("Scan skipped – bot status is '%s'.", BOT_STATUS)
+        logger.error("Auto-login failed. Scan aborted.")
+        send_telegram("🔴 *Scan aborted* — Auto-login failed. Check API credentials.")
         return
 
     if not NSE_STOCKS:
