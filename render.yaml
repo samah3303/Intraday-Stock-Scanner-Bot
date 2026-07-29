@@ -10,9 +10,15 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
     healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
+      - key: TZ
+        value: Asia/Kolkata
       # ── Angel One SmartAPI ──
       - key: ANGEL_API_KEY
         sync: false

@@ -77,8 +77,15 @@ NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
 # Default 100 Top Liquid Bullish NSE Stock Universe (imported from shared.constants)
 # DEFAULT_100_STOCKS list comes from shared.constants
 
-# Target /tmp on Vercel/serverless environments to avoid read-only file system errors
-SELECTED_STOCKS_FILE = os.path.join("/tmp" if os.getenv("VERCEL") else os.path.dirname(__file__), "selected_stocks.json")
+# Handle Persistent Disk on Render, fallback to /tmp on Vercel, or local directory
+if os.getenv("RENDER"):
+    data_dir = "/var/data"
+elif os.getenv("VERCEL"):
+    data_dir = "/tmp"
+else:
+    data_dir = os.path.dirname(__file__)
+
+SELECTED_STOCKS_FILE = os.path.join(data_dir, "selected_stocks.json")
 SELECTED_STOCKS: list[str] = list(DEFAULT_100_STOCKS)  # Custom watchlist stocks to scan
 
 
@@ -243,9 +250,14 @@ def automate_angel_login() -> None:
         totp = pyotp.TOTP(totp_key).now()
         
         # SmartConnect creates a 'logs/' directory in the current working directory.
-        # On serverless/Vercel environments, the filesystem is read-only except for /tmp.
-        # We work around this by temporarily switching to a writable directory.
-        work_dir = "/tmp" if os.getenv("VERCEL") else os.getcwd()
+        # Ensure we are in a writable directory (persistent if Render, /tmp if Vercel).
+        if os.getenv("RENDER"):
+            work_dir = "/var/data"
+        elif os.getenv("VERCEL"):
+            work_dir = "/tmp"
+        else:
+            work_dir = os.getcwd()
+
         os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
         
         old_cwd = os.getcwd()
