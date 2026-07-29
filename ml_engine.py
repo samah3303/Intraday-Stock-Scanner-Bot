@@ -211,11 +211,14 @@ class OELSetupClassifier:
             return
 
         logger.info("Training %s classifier on %d records...", self.model_type, len(X))
-        if eval_set and self.model_type == "xgboost":
-            self.model.fit(X, y, eval_set=eval_set, verbose=False)
-        else:
-            self.model.fit(X, y)
+        fit_kwargs = {"verbose": False}
+        if eval_set:
+            if self.model_type == "xgboost":
+                fit_kwargs["eval_set"] = eval_set
+            elif self.model_type == "lightgbm":
+                fit_kwargs["eval_set"] = eval_set
         
+        self.model.fit(X, y, **fit_kwargs)
         self.is_trained = True
         logger.info("Model training complete.")
 
@@ -259,6 +262,49 @@ class OELSetupClassifier:
                 self.model.load_model(path)
                 self.is_trained = True
                 logger.info("Model loaded successfully from %s", path)
+
+    @staticmethod
+    def generate_synthetic_training_data(n_samples: int = 5000) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Generate synthetic training data based on the OEL strategy rules.
+        Features reflect realistic distributions of morning breakout patterns.
+        """
+        np.random.seed(42)
+        
+        data = {
+            "rvol": np.random.lognormal(mean=0.4, sigma=0.6, size=n_samples),
+            "gap_pct": np.random.normal(loc=0.8, scale=0.6, size=n_samples),
+            "orderbook_imbalance": np.clip(np.random.normal(loc=0.55, scale=0.15, size=n_samples), 0.1, 0.95),
+            "nifty_momentum": np.random.normal(loc=0.15, scale=0.5, size=n_samples),
+            "upper_wick_pct": np.random.exponential(scale=12.0, size=n_samples),
+            "body_pct": np.random.uniform(30.0, 90.0, size=n_samples),
+            "price_level": np.random.uniform(300.0, 3000.0, size=n_samples),
+        }
+        
+        df = pd.DataFrame(data)
+        
+        # Target: 1 = profitable trade (T1/T2 hit), 0 = stopped out or breakeven
+        # Strong setups: high RVOL, high orderbook imbalance, low wick, positive gap
+        prob = (
+            0.30
+            + 0.20 * (df["rvol"] > 1.8).astype(float)
+            + 0.15 * (df["orderbook_imbalance"] > 0.60).astype(float)
+            + 0.15 * (df["upper_wick_pct"] < 15).astype(float)
+            + 0.10 * (df["gap_pct"] > 0.5).astype(float)
+            + 0.10 * (df["nifty_momentum"] > 0).astype(float)
+        )
+        prob = np.clip(prob, 0.05, 0.95)
+        y = (np.random.random(n_samples) < prob).astype(int)
+        
+        logger.info("Generated %d synthetic training samples (%d positive, %d negative)",
+                     n_samples, int(y.sum()), n_samples - int(y.sum()))
+        return df, pd.Series(y)
+
+    def train_on_synthetic(self, n_samples: int = 5000) -> None:
+        """Train the classifier on synthetic data generated from strategy rules."""
+        X, y = self.generate_synthetic_training_data(n_samples)
+        self.fit(X, y)
+        logger.info("Model trained on %d synthetic samples. is_trained=%s", n_samples, self.is_trained)
 
 
 # ===========================================================================
@@ -367,6 +413,20 @@ class OELTradingPipeline:
         self.feature_extractor = FeatureExtractor()
         self.classifier = OELSetupClassifier(model_type="xgboost")
         self.risk_manager = DynamicRiskManager()
+
+        # Auto-train on synthetic data if no pre-trained model exists
+        model_path = os.path.join(os.path.dirname(__file__), "oel_model.json")
+        if os.path.exists(model_path):
+            self.classifier.load_model(model_path)
+            logger.info("Loaded pre-trained ML model from disk.")
+        
+        if not self.classifier.is_trained:
+            logger.info("No pre-trained model found. Training on synthetic data...")
+            self.classifier.train_on_synthetic(n_samples=5000)
+            try:
+                self.classifier.save_model(model_path)
+            except Exception as exc:
+                logger.debug("Could not persist model: %s", exc)
 
     def process_setup_candidates(
         self,

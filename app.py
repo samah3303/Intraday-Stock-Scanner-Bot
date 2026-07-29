@@ -27,6 +27,13 @@ from SmartApi import SmartConnect
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+# Shared modules
+from shared.constants import (
+    DEFAULT_100_STOCKS, NIFTY_TOKEN,
+    MIN_STOCK_PRICE, MAX_STOCK_PRICE, MAX_SCAN_STOCKS,
+)
+from shared.deepseek_analyzer import analyze_hit_with_deepseek
+
 # ---------------------------------------------------------------------------
 # Logging & In-Memory Log Ring Buffer (for Dashboard Live Terminal UI)
 # ---------------------------------------------------------------------------
@@ -67,21 +74,8 @@ app = Flask(__name__)
 BOT_STATUS = "Stopped"
 smart_api = None      # SmartConnect session object
 NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
-# Default 100 Top Liquid Bullish NSE Stock Universe
-DEFAULT_100_STOCKS = [
-    "ABB", "ADANIENT", "ADANIPORTS", "AMBUJACEM", "APOLLOHOSP", "ASIANPAINT", "AUBANK", "AXISBANK",
-    "BAJAJ-AUTO", "BAJAJFINSV", "BAJFINANCE", "BANKBARODA", "BEL", "BERGEPAINT", "BHARATFORG", "BHARTIARTL",
-    "BPCL", "BRITANNIA", "CANBK", "CGPOWER", "CHOLAFIN", "CIPLA", "COALINDIA", "COLPAL",
-    "CONCOR", "CUMMINSIND", "DIVISLAB", "DLF", "DRREDDY", "EICHERMOT", "ETERNAL", "FEDERALBNK",
-    "GAIL", "GODREJPROP", "GRASIM", "HAL", "HAVELLS", "HCLTECH", "HDFCBANK", "HEROMOTOCO",
-    "HINDALCO", "ICICIBANK", "ICICIPRULI", "IDFCFIRSTB", "INDIGO", "INDUSINDBK", "INFY", "IOC",
-    "IRCTC", "JINDALSTEL", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "LT", "M&M", "MANAPPURAM",
-    "MARUTI", "MAXHEALTH", "MOTHERSON", "MUTHOOTFIN", "NAUKRI", "NESTLEIND", "NTPC", "OFSS",
-    "ONGC", "PERSISTENT", "PFC", "PIDILITIND", "PNB", "POLYCAB", "POWERGRID", "RECLTD",
-    "RELIANCE", "SBIN", "SHRIRAMFIN", "SIEMENS", "SRF", "SUNPHARMA", "TATACOMM", "TATACONSUM",
-    "TATAELXSI", "TATAPOWER", "TATASTEEL", "TATATECH", "TCS", "TECHM", "TITAN", "TORNTPHARM",
-    "TRENT", "TVSMOTOR", "ULTRACEMCO", "VBL", "VOLTAS", "WESTLIFE", "WIPRO"
-]
+# Default 100 Top Liquid Bullish NSE Stock Universe (imported from shared.constants)
+# DEFAULT_100_STOCKS list comes from shared.constants
 
 # Target /tmp on Vercel/serverless environments to avoid read-only file system errors
 SELECTED_STOCKS_FILE = os.path.join("/tmp" if os.getenv("VERCEL") else os.path.dirname(__file__), "selected_stocks.json")
@@ -136,21 +130,15 @@ LATEST_SCAN_RESULTS = {
 }
 
 # ---------------------------------------------------------------------------
-# System Constants
+# System Constants (imported from shared.constants)
 # ---------------------------------------------------------------------------
-NIFTY_TOKEN = "99926000"
-
-# Universe parameters
-MIN_STOCK_PRICE = 300.0       # Minimum stock price filter
-MAX_STOCK_PRICE = 3000.0      # Maximum stock price filter
-MAX_SCAN_STOCKS = 750         # Max NSE stocks to scan per run
 
 # ---------------------------------------------------------------------------
 # Telegram Group Alert Helper
 # ---------------------------------------------------------------------------
 
 def send_telegram(message: str) -> None:
-    """Send a markdown-formatted message via Telegram Bot API to configured chat/group."""
+    """Send a markdown-formatted message via Telegram Bot API with retries."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
@@ -162,12 +150,18 @@ def send_telegram(message: str) -> None:
         "text": message,
         "parse_mode": "Markdown",
     }
-    try:
-        resp = requests.post(url, json=payload, timeout=10)
-        resp.raise_for_status()
-        logger.info("Telegram alert sent successfully.")
-    except Exception as exc:
-        logger.error("Telegram send failed: %s", exc)
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=10)
+            resp.raise_for_status()
+            logger.info("Telegram alert sent successfully.")
+            return
+        except Exception as exc:
+            if attempt < 2:
+                logger.warning("Telegram send attempt %d failed: %s. Retrying...", attempt + 1, exc)
+                time.sleep(1.0)
+            else:
+                logger.error("Telegram send failed after 3 attempts: %s", exc)
 
 
 def send_telegram_long(message: str) -> None:
@@ -248,12 +242,15 @@ def automate_angel_login() -> None:
     try:
         totp = pyotp.TOTP(totp_key).now()
         
-        # SmartConnect attempts to create 'logs/' in current working directory.
-        # Temporarily switch working directory to /tmp on serverless environments to prevent Read-only file system errors.
+        # SmartConnect creates a 'logs/' directory in the current working directory.
+        # On serverless/Vercel environments, the filesystem is read-only except for /tmp.
+        # We work around this by temporarily switching to a writable directory.
+        work_dir = "/tmp" if os.getenv("VERCEL") else os.getcwd()
+        os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
+        
         old_cwd = os.getcwd()
         try:
-            os.chdir("/tmp")
-            os.makedirs("/tmp/logs", exist_ok=True)
+            os.chdir(work_dir)
             obj = SmartConnect(api_key=api_key)
         finally:
             os.chdir(old_cwd)
@@ -401,97 +398,6 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
         "ema20": round(ema_value, 2),
         "wick_pct": round(wick_pct, 1),
     }
-
-
-# ===========================================================================
-# DEEPSEEK AI ANALYSIS MODULE
-# ===========================================================================
-
-def analyze_hit_with_deepseek(hit: dict, nifty_bullish: bool = True) -> dict:
-    """
-    Send stock hit details to DeepSeek AI model for trade quality scoring (0-100),
-    dynamic Entry/SL/Target calculations, and reasoning.
-    """
-    api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    close_price = hit.get("close", 1000.0)
-    low_price = hit.get("low", close_price * 0.99)
-    sl = round(low_price * 0.998, 2)
-    risk = max(close_price - sl, 0.5)
-    t1 = round(close_price + (risk * 2.0), 2)
-    t2 = round(close_price + (risk * 3.0), 2)
-
-    if not api_key or api_key == "your_deepseek_api_key_here":
-        score = 85 if hit.get("wick_pct", 10) < 20 else 72
-        return {
-            "score": score,
-            "recommendation": "BUY" if score >= 75 else "AVOID",
-            "entry": round(close_price, 2),
-            "stop_loss": sl,
-            "target_1": t1,
-            "target_2": t2,
-            "reasoning": f"Clean 09:15 Open=Low candle with {hit.get('wick_pct', 0)}% upper wick, price above 20 EMA."
-        }
-
-    url = "https://api.deepseek.com/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
-    system_prompt = (
-        "You are an expert quantitative trader and risk manager specializing in Indian stock market (NSE) intraday trading. "
-        "Analyze the provided stock scanner hit and output strictly valid JSON with no markdown wrapping or additional text.\n"
-        "Required JSON schema:\n"
-        "{\n"
-        '  "score": integer (0 to 100 confidence rating),\n'
-        '  "recommendation": string ("BUY" or "AVOID"),\n'
-        '  "entry": float (suggested limit entry price near 09:15 close),\n'
-        '  "stop_loss": float (stop loss slightly below 09:15 low),\n'
-        '  "target_1": float (1:2 Risk-Reward target price),\n'
-        '  "target_2": float (1:3 Risk-Reward target price),\n'
-        '  "reasoning": string (concise 1-2 sentence technical analysis justification)\n'
-        "}"
-    )
-
-    user_prompt = f"""Analyze this NSE stock intraday setup:
-Symbol: {hit.get('symbol')}
-09:15 Open: {hit.get('open')}
-09:15 High: {hit.get('high')}
-09:15 Low: {hit.get('low')}
-09:15 Close: {hit.get('close')}
-20 EMA (5-min): {hit.get('ema20')}
-Upper Wick Rejection: {hit.get('wick_pct')}%
-Nifty 50 Benchmark: {"Bullish" if nifty_bullish else "Neutral"}
-"""
-
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"}
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=12)
-        response.raise_for_status()
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
-        res_json = json.loads(content)
-        return res_json
-    except Exception as exc:
-        logger.warning("DeepSeek API call error for %s: %s. Using fallback.", hit.get("symbol"), exc)
-        return {
-            "score": 75,
-            "recommendation": "BUY",
-            "entry": round(close_price, 2),
-            "stop_loss": sl,
-            "target_1": t1,
-            "target_2": t2,
-            "reasoning": "Standard Open=Low structural support pass (API Fallback)."
-        }
 
 
 # ===========================================================================
@@ -662,30 +568,36 @@ def run_strategy_scan() -> None:
 
 
 # ---------------------------------------------------------------------------
-# APScheduler Setup
+# APScheduler Setup (local only — Vercel uses its own cron in vercel.json)
 # ---------------------------------------------------------------------------
-scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+IS_VERCEL = bool(os.getenv("VERCEL"))
 
-# Auto-login at 08:45 AM IST every weekday
-scheduler.add_job(
-    automate_angel_login,
-    CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone="Asia/Kolkata"),
-    id="daily_login",
-    replace_existing=True,
-    misfire_grace_time=300,
-)
+if not IS_VERCEL:
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
 
-# Execute Strategy Scan at 09:20 AM IST every weekday
-scheduler.add_job(
-    run_strategy_scan,
-    CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Kolkata"),
-    id="daily_scan",
-    replace_existing=True,
-    misfire_grace_time=300,
-)
+    # Auto-login at 08:45 AM IST every weekday
+    scheduler.add_job(
+        automate_angel_login,
+        CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone="Asia/Kolkata"),
+        id="daily_login",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
 
-scheduler.start()
-logger.info("APScheduler started – active jobs: %s", [j.id for j in scheduler.get_jobs()])
+    # Execute Strategy Scan at 09:20 AM IST every weekday
+    scheduler.add_job(
+        run_strategy_scan,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Kolkata"),
+        id="daily_scan",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    scheduler.start()
+    logger.info("APScheduler started – active jobs: %s", [j.id for j in scheduler.get_jobs()])
+else:
+    logger.info("Running on Vercel — skipping APScheduler (cron handled by vercel.json)")
+    scheduler = None
 
 # ---------------------------------------------------------------------------
 # Control Panel HTML UI (Embedded Glassmorphic Dark Theme)
@@ -1272,6 +1184,22 @@ CONTROL_PANEL_HTML = r"""
 # HTTP Endpoints & Routes
 # ---------------------------------------------------------------------------
 
+# Simple API key auth for protected write endpoints.
+# Set DASHBOARD_SECRET in env to enable; if unset, all endpoints are public.
+DASHBOARD_SECRET = os.getenv("DASHBOARD_SECRET", "")
+
+def _require_auth():
+    """Check request for valid API key. Returns None if authorized, or error response."""
+    if not DASHBOARD_SECRET:
+        return None  # No secret configured — allow all
+    auth_header = request.headers.get("X-API-Key", "")
+    auth_query = request.args.get("key", "")
+    provided = auth_header or auth_query
+    if provided != DASHBOARD_SECRET:
+        return jsonify({"status": "error", "message": "Unauthorized. Provide valid API key."}), 401
+    return None
+
+
 @app.route("/")
 def index():
     """Render the control-panel dashboard."""
@@ -1286,6 +1214,9 @@ def index():
 @app.route("/start")
 def start_bot():
     """Trigger manual Angel One authentication & refresh master."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
     automate_angel_login()
     return redirect(url_for("index"))
 
@@ -1293,6 +1224,9 @@ def start_bot():
 @app.route("/scan")
 def trigger_scan():
     """On-demand scan execution trigger for instant testing."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
     if BOT_STATUS != "Running":
         automate_angel_login()
     run_strategy_scan()
@@ -1302,6 +1236,9 @@ def trigger_scan():
 @app.route("/stop")
 def stop_bot():
     """Stop bot motor."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
     global BOT_STATUS
     BOT_STATUS = "Stopped"
     send_telegram("🛑 *Bot Motor stopped* via control panel.")
@@ -1324,6 +1261,9 @@ def get_stocks_api():
 @app.route("/api/stocks", methods=["POST"])
 def update_stocks_api():
     """Save updated selected stocks list."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
     data = request.get_json(silent=True) or {}
     selected = data.get("selected", [])
     if save_selected_stocks(selected):
@@ -1338,6 +1278,9 @@ def update_stocks_api():
 @app.route("/api/stocks/clear", methods=["POST"])
 def clear_stocks_api():
     """Clear custom watchlist state."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
     if save_selected_stocks([]):
         return jsonify({
             "status": "success",

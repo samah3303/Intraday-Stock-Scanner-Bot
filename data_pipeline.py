@@ -122,31 +122,47 @@ class BatchQuoteFetcher:
     """
     INSTITUTIONAL BATCH QUOTE ENGINE
     Prevents broker HTTP 429 rate limit errors and latency lags by fetching 
-    all 100 stock quotes in parallel threaded batches or 1 single batch payload.
+    all 100 stock quotes in parallel threaded batches.
+    
+    Accepts an optional live_quote_fn(symbol, token) -> dict for real broker integration.
+    Falls back to placeholder values if no live function is provided.
     """
 
-    def __init__(self, max_workers: int = 10):
+    def __init__(self, max_workers: int = 10, live_quote_fn=None):
         self.max_workers = max_workers
+        self.live_quote_fn = live_quote_fn
 
     def fetch_batch_quotes(self, symbols: List[str], mapper: NSEInstrumentMapper) -> Dict[str, dict]:
         """
-        Fetches live market quotes for 100 symbols concurrently using ThreadPoolExecutor.
-        Execution Time: < 300 milliseconds total for 100 stocks.
+        Fetches live market quotes for symbols concurrently using ThreadPoolExecutor.
+        Uses live_quote_fn for real API data, or returns placeholder values.
         """
         results = {}
+        use_live = self.live_quote_fn is not None
+        if not use_live:
+            logger.warning("No live_quote_fn provided — returning placeholder LTP values. "
+                           "Integrate with SmartAPI.getCandleData or Kite.quote() for real data.")
 
         def fetch_single(sym: str) -> Tuple[str, Optional[dict]]:
             token = mapper.get_eq_token(sym)
             if not token:
                 return sym, None
             
-            # Simulated fast multi-threaded fetch / Broker Batch API payload
-            # Replace with SmartAPI `mode="FULL"` or Kite `quote()` batch
+            if use_live:
+                try:
+                    quote = self.live_quote_fn(sym, token)
+                    return sym, quote
+                except Exception as exc:
+                    logger.debug("Live quote fetch failed for %s: %s", sym, exc)
+                    return sym, None
+            
+            # Placeholder when no live function is configured
             quote = {
                 "symbol": sym,
                 "token": token,
-                "ltp": round(float(np.random.uniform(300.0, 3000.0)), 2),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "ltp": 0.0,  # Explicitly zero to indicate no real data
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "_placeholder": True,
             }
             return sym, quote
 

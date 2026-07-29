@@ -9,3 +9,6 @@ gunicorn
 python-dotenv
 logzero
 websocket-client
+xgboost>=1.7.0
+lightgbm>=3.3.0
+scikit-learn>=1.2.0

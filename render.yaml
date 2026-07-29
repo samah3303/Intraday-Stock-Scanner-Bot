@@ -1,0 +1,35 @@
+# AlphaQuant AI — Render Blueprint
+# Deploy: push to GitHub, then connect repo in Render Dashboard
+# or use: render blueprint apply
+services:
+  - type: web
+    name: alphaquant-ai-scanner
+    runtime: python
+    region: singapore  # Closest to NSE (India)
+    plan: starter      # Upgrade to standard for production
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      # ── Angel One SmartAPI ──
+      - key: ANGEL_API_KEY
+        sync: false
+      - key: ANGEL_CLIENT_CODE
+        sync: false
+      - key: ANGEL_MPIN
+        sync: false
+      - key: ANGEL_TOTP_KEY
+        sync: false
+      # ── Telegram Bot ──
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      # ── DeepSeek AI (optional) ──
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # ── Dashboard Auth (optional) ──
+      - key: DASHBOARD_SECRET
+        sync: false

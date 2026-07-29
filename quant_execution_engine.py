@@ -15,7 +15,10 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass  # Ignore in non-TTY environments (e.g., Vercel, Docker)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(message)s")
 logger = logging.getLogger("QuantExecutionEngine")
 
@@ -130,7 +133,8 @@ class IntrabarExecutionSimulator:
             }
 
         t1_hit = False
-        sl_dist = max(entry_price - sl_price, 0.50)
+        original_sl = sl_price  # Save original SL for R:R calculations
+        sl_dist = max(entry_price - original_sl, 0.50)
 
         for idx, bar in minute_df.iterrows():
             b_high = float(bar["high"])
@@ -141,6 +145,16 @@ class IntrabarExecutionSimulator:
             # If both SL and Target 1/Target 2 are touched within the exact same 1-minute bar,
             # assume conservative worst-case execution: STOP LOSS HIT FIRST!
             if b_low <= sl_price and b_high >= t1_price:
+                # If T1 was already hit before this conflict bar, exit at breakeven on remainder
+                if t1_hit:
+                    return {
+                        "symbol": symbol,
+                        "status": "T1_PARTIAL_SL",
+                        "realized_r": 1.0,  # T1 (+2R on half = 1R) + breakeven on rest
+                        "exit_price": entry_price,
+                        "exit_time": t_stamp,
+                        "detail": f"🛑 Breakeven SL hit after T1 at {t_stamp}. Net: +1.0 R (T1 locked + breakeven)."
+                    }
                 return {
                     "symbol": symbol,
                     "status": "SL_HIT",
@@ -152,6 +166,16 @@ class IntrabarExecutionSimulator:
 
             # Check Stop Loss Hit
             if b_low <= sl_price:
+                # If T1 was already hit, this is breakeven SL, not a loss
+                if t1_hit:
+                    return {
+                        "symbol": symbol,
+                        "status": "T1_PARTIAL_SL",
+                        "realized_r": 1.0,  # T1 (+2R on half = 1R) + breakeven on rest
+                        "exit_price": entry_price,
+                        "exit_time": t_stamp,
+                        "detail": f"🛑 Breakeven SL hit after T1 at {t_stamp}. Net: +1.0 R."
+                    }
                 return {
                     "symbol": symbol,
                     "status": "SL_HIT",
@@ -183,11 +207,20 @@ class IntrabarExecutionSimulator:
         eod_time = str(minute_df.iloc[-1].get("timestamp", "15:25:00"))
         realized_r = round((eod_close - entry_price) / sl_dist, 2)
         
-        status = "T1_PARTIAL_EOD" if t1_hit else "EOD_CLOSE"
+        if t1_hit:
+            # T1 hit (+2R on half), plus EOD result on remaining half
+            return {
+                "symbol": symbol,
+                "status": "T1_PARTIAL_EOD",
+                "realized_r": round(1.0 + (realized_r * 0.5), 2),
+                "exit_price": eod_close,
+                "exit_time": eod_time,
+                "detail": f"🕒 T1 booked + EOD Close at ₹{eod_close:.2f} (T1: +1.0R, EOD half: {realized_r:+.2f}×0.5R)"
+            }
         return {
             "symbol": symbol,
-            "status": status,
-            "realized_r": realized_r if not t1_hit else round(1.0 + (realized_r * 0.5), 2),
+            "status": "EOD_CLOSE",
+            "realized_r": realized_r,
             "exit_price": eod_close,
             "exit_time": eod_time,
             "detail": f"🕒 EOD Close at ₹{eod_close:.2f} ({realized_r:+.2f} R:R) (Time: {eod_time})"

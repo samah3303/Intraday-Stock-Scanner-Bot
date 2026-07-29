@@ -1,5 +1,7 @@
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -26,3 +28,7 @@ env/
 Thumbs.db
 
 .vercel
+__tmp_logs/
+selected_stocks.json
+*.log
+.pi
