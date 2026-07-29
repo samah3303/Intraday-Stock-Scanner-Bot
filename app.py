@@ -1323,8 +1323,28 @@ def healthz():
 
 
 # ---------------------------------------------------------------------------
+# Background Scheduler (For Render.com / Persistent Servers)
+# ---------------------------------------------------------------------------
+def start_scheduler():
+    scheduler = BackgroundScheduler(timezone=IST)
+    
+    # Run scan every Mon-Fri at 09:20 AM IST
+    scheduler.add_job(
+        func=run_strategy_scan,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone=IST),
+        id="intraday_scan",
+        name="Daily 09:20 AM Scan",
+        replace_existing=True,
+    )
+    
+    scheduler.start()
+    logger.info("APScheduler started! Scan scheduled for Mon-Fri at 09:20 AM IST.")
+
+# Start the scheduler when the app starts
+start_scheduler()
+
+# ---------------------------------------------------------------------------
 # Local Standalone Launcher
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
