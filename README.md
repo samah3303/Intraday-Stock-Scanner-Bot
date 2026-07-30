@@ -1,48 +1,55 @@
-# 📈 AlphaQuant AI — Quantitative Intraday Stock Scanner with DeepSeek & ML Engine
+# ⚡ AlphaQuant Pro 3.0 — Institutional Intraday Engine & DeepSeek Tool Agent
 
-A high-performance automated **Intraday Stock Scanner** built with Python, Flask, Angel One SmartAPI, APScheduler, Telegram Bot API, **XGBoost Quantitative Machine Learning Engine**, and **DeepSeek AI Reasoning Engine**.
+**AlphaQuant Pro 3.0** is an institutional-grade, 100% automated **Intraday Stock Scanner & Trading Engine** built with Python, Flask, Angel One SmartAPI, APScheduler, Telegram Bot API, **Calibrated XGBoost ML**, **IsolationForest Market Anomaly Guard**, **DeepSeek v4 Native Tool Agent**, and **Model Context Protocol (MCP)** server.
 
-The system automatically authenticates with Angel One via TOTP 2FA, fetches live 5-minute candle data, scans top NSE universe stocks against a **6-Rule Structural OEL Strategy**, evaluates candidate setups through **AlphaQuant Machine Learning & DeepSeek AI**, and broadcasts high-probability trade signals to Telegram channels and a glassmorphic web control panel.
-
----
-
-## 🌟 Key Features
-
-- **6-Rule Structural OEL Strategy**: Mechanical technical filtering at 09:20 AM IST.
-- **DeepSeek AI Reasoning Engine**: Evaluates matching candidates to assign a **Confidence Score (0-100)**, **Buy Limit Entry**, **Stop Loss (SL)**, **Target 1 (1:2 R:R)**, **Target 2 (1:3 R:R)**, and **AI Technical Justifications**.
-- **Quantitative ML Pipeline (`ml_engine.py`)**: XGBoost & LightGBM classification model filtering trades with probability score $\ge 0.75$ using relative volume (RVOL), gap %, Level 2 orderbook imbalance, and Nifty momentum.
-- **Dynamic ATR Risk Management**: Replaces static R:R ratios with asset-specific ATR volatility sizing and dynamic position allocation.
-- **Telegram Group Alerts**: Markdown-formatted trade signals sent directly to your Telegram trading channel.
-- **Glassmorphic Web Control Panel & Live Logs**: Modern UI displaying real-time matching tickers, AI score badges, custom watchlist manager, and auto-refreshing system log terminal.
+The system automatically executes pre-market daily screening at **08:45 AM IST** across all ~2,400 NSE Cash Equity scrips, evaluates 09:20 AM breakouts against a **6-Rule Structural OEL Strategy**, verifies setups through **DeepSeek Tool Agent** and **Calibrated Classifier Probabilities**, logs trade outcomes to a self-learning journal, and streams alerts to Telegram and a **Black & Yellow Glassmorphic Control Panel**.
 
 ---
 
-## 📋 Filter Strategy Rules (6/6 Technical + DeepSeek & ML)
+## 🌟 Core Architecture & Capabilities
 
-A stock ticker must meet **all baseline conditions** at 09:20 AM IST to be evaluated:
+1. **Dynamic Pre-Market Screening (08:45 AM IST)**:
+   - Evaluates the full NSE Cash Equity market (`-EQ`) every morning.
+   - Screened bounds: $₹300 \le \text{Price} \le ₹3,000$, $\text{Prev Close} > \text{Prev Open}$ (Green Daily Candle), and $\text{Prev Close} > \text{Daily 20 EMA}$.
+   - Selects ~15–25 daily uptrend candidate scrips and dispatches a Telegram pre-market brief.
 
-| # | Rule | Filter Logic & Formula |
-|---|---|---|
-| 1 | **Open = Low & Support Alignment** | Today's 09:15 Open == Today's 09:15 Low **AND** Today's 09:15 Open == Previous Day's Last 5-minute Low |
-| 2 | **Bullish Candle Body** | Today's 09:15 Close > Today's 09:15 Open |
-| 3 | **Minimal Upper Rejection** | Upper Wick `(High - Close)` ≤ `50%` of Candle Range `(High - Low)` |
-| 4 | **Price Universe Range** | `300 ≤ Close Price ≤ 3000` |
-| 5 | **Market Trend Alignment** | Nifty 50 Index 09:15 Close > Nifty 50 Index 09:15 Open |
-| 6 | **Trend Confirmation** | Today's 09:15 Close > 20-period EMA on 5-minute chart |
-| 🧠 7 | **DeepSeek & ML Risk Engine** | Quality scoring (0-100), dynamic Buy Limit, structural SL, 1:2 & 1:3 R:R targets, and AI justification |
+2. **IsolationForest Market Anomaly Guard (`MarketAnomalyDetector`)**:
+   - Machine learning anomaly detector (`sklearn.ensemble.IsolationForest`, contamination=0.05).
+   - Detects extreme market crash, flash-crash, or abnormal volatility anomalies and pauses trade signals to safeguard capital.
+
+3. **Multi-Step DeepSeek v4 Tool Agent (`shared/deepseek_agent.py`)**:
+   - Native tool-calling agent using DeepSeek API with 4 local tool handlers:
+     1. `check_technical_rules` (runs 6-rule check in Python)
+     2. `get_sector_performance` (maps symbol to sector & checks relative strength)
+     3. `calculate_risk_reward` (computes dynamic entry, SL, T1 1:2, T2 1:3)
+     4. `submit_final_decision` (outputs final confidence evaluation score $\ge 75$)
+
+4. **Calibrated XGBoost ML Pipeline (`ml_engine.py`)**:
+   - `sklearn.calibration.CalibratedClassifierCV(method="isotonic", cv=5)` wrapping XGBoost.
+   - Calibrates raw model confidence scores into true historical win probabilities.
+
+5. **Self-Learning Trade Outcome Journal (`trade_journal.py`)**:
+   - `log_trade_outcome()` appends real trade features and outcomes to `trade_outcomes.json`.
+   - `retrain_from_history()` runs automatically every **Saturday at 10:00 AM IST** to recalibrate ML model parameters on logged trade outcomes.
+
+6. **Model Context Protocol (MCP) Server (`mcp_server.py`)**:
+   - Stdio MCP server exposing 7 tools: `scan_market`, `get_scan_results`, `get_bot_status`, `get_system_logs`, `get_watchlist`, `analyze_stock`, `generate_morning_brief`.
+
+7. **Black & Yellow Glassmorphic Dashboard UI**:
+   - High-contrast pitch black & neon yellow dashboard with custom embedded **SVG Falcon Shield logo**, pre-market candidates grid, live signal cards, AI score gauges, and real-time terminal console.
 
 ---
 
-## 🧠 AlphaQuant AI Trade Signals
-
-Every stock passing structural rules is evaluated by DeepSeek AI & XGBoost:
+## 📅 Daily Automated Schedule (Mon – Sat IST)
 
 ```
-• RELIANCE 🔥 [HIGH] AI Score: 88/100
-  O:₹2872.00 H:₹2891.50 L:₹2872.00 C:₹2889.35 | EMA20:₹2865.42
-  📍 Entry: ₹2889.35 | 🛑 SL: ₹2866.25
-  🎯 T1: ₹2935.55 | 🎯 T2: ₹2958.65
-  💡 Strong 09:15 Open=Low base with 11.4% upper wick rejection and 20 EMA alignment.
+08:45 AM IST (Mon-Fri) ➔ Pre-Market Screening across full NSE market + DeepSeek Morning Brief
+     │
+09:20 AM IST (Mon-Fri) ➔ Breakout Scan ➔ Anomaly Guard Check ➔ 6 Rules + DeepSeek AI ➔ Telegram Alerts
+     │
+15:30 PM IST (Mon-Fri) ➔ Post-Market Review ➔ Generates Telegram Trade Journal Summary
+     │
+10:00 AM IST (Saturday) ➔ Weekly ML Retrain on trade_outcomes.json
 ```
 
 ---
@@ -50,36 +57,26 @@ Every stock passing structural rules is evaluated by DeepSeek AI & XGBoost:
 ## ⚙️ Environment Variables (`.env`)
 
 ```env
-# Angel One SmartAPI Credentials
-ANGEL_API_KEY=your_angel_api_key
-ANGEL_CLIENT_CODE=your_client_code
-ANGEL_PASSWORD=your_4_digit_mpin
-ANGEL_MPIN=your_4_digit_mpin
-ANGEL_TOTP_KEY=your_totp_secret_key
-
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_group_chat_id
-
-# DeepSeek AI API Key (Optional)
+SMARTAPI_API_KEY=your_angel_one_api_key
+SMARTAPI_CLIENT_CODE=your_client_code
+SMARTAPI_PASSWORD=your_password
+SMARTAPI_TOTP_SECRET=your_totp_secret
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
 DEEPSEEK_API_KEY=your_deepseek_api_key
 ```
 
 ---
 
-## 🚀 Local Setup & Run
+## 🚀 Quick Start & Launch
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 pip install -r requirements.txt
 
-# Run ML & DeepSeek tests
-python ml_engine.py
-python test_deepseek.py
-python test_telegram.py
-
-# Launch Flask Web Server
+# 2. Run Flask Web Application
 python app.py
-```
 
-Open [http://localhost:5000](http://localhost:5000) to view the live dashboard.
+# 3. Run MCP Stdio Server (for AI Assistants)
+python mcp_server.py
+```

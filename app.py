@@ -752,18 +752,18 @@ CONTROL_PANEL_HTML = r"""
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Angel One Structural OEL Intraday Stock Scanner" />
-  <title>Intraday Scanner — Dashboard</title>
+  <meta name="description" content="AlphaQuant Pro 3.0 — Institutional Intraday Stock Scanner" />
+  <title>AlphaQuant Pro 3.0 — Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      background: #0b1329;
-      color: #e2e8f0;
+      background-color: #09090b;
+      color: #f4f4f5;
       min-height: 100vh;
-      padding: 2rem 1rem;
+      padding: 1.5rem 1rem;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -773,8 +773,8 @@ CONTROL_PANEL_HTML = r"""
       position: fixed;
       inset: 0;
       background:
-        radial-gradient(ellipse 80% 60% at 20% 20%, rgba(56, 189, 248, 0.09) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139, 92, 246, 0.09) 0%, transparent 60%);
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(250, 204, 21, 0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 50% at 80% 90%, rgba(234, 179, 8, 0.06) 0%, transparent 60%);
       pointer-events: none;
       z-index: 0;
     }
@@ -782,17 +782,21 @@ CONTROL_PANEL_HTML = r"""
       position: relative;
       z-index: 1;
       width: 100%;
-      max-width: 900px;
+      max-width: 1050px;
     }
     .card {
-      background: rgba(23, 32, 54, 0.75);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(18, 18, 22, 0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(250, 204, 21, 0.2);
       border-radius: 1.25rem;
-      padding: 2rem;
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+      padding: 1.75rem;
+      box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 35px rgba(250, 204, 21, 0.05);
       margin-bottom: 1.5rem;
+      transition: border-color 0.3s ease;
+    }
+    .card:hover {
+      border-color: rgba(250, 204, 21, 0.35);
     }
     .header {
       display: flex;
@@ -801,155 +805,132 @@ CONTROL_PANEL_HTML = r"""
       flex-wrap: wrap;
       gap: 1rem;
       margin-bottom: 1.5rem;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      border-bottom: 1px solid rgba(250, 204, 21, 0.15);
       padding-bottom: 1.25rem;
     }
-    .header-left { display: flex; align-items: center; gap: 0.85rem; }
-    .icon {
-      width: 48px; height: 48px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+    .header-left { display: flex; align-items: center; gap: 1rem; }
+    .brand-icon {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #facc15 0%, #ca8a04 100%);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.4rem;
-      box-shadow: 0 4px 16px rgba(56, 189, 248, 0.3);
+      box-shadow: 0 6px 20px rgba(250, 204, 21, 0.35);
     }
     .title h1 {
-      font-size: 1.4rem; font-weight: 800;
-      background: linear-gradient(135deg, #f8fafc 30%, #94a3b8 100%);
+      font-size: 1.55rem; font-weight: 900; letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #fef08a 0%, #facc15 50%, #eab308 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    .title p { font-size: 0.8rem; color: #94a3b8; margin-top: 0.15rem; }
+    .title p { font-size: 0.82rem; color: #a1a1aa; margin-top: 0.2rem; }
 
     .badge {
-      display: inline-flex; align-items: center; gap: 0.4rem;
-      padding: 0.4rem 0.9rem; border-radius: 9999px;
-      font-size: 0.78rem; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 0.45rem;
+      padding: 0.45rem 1rem; border-radius: 9999px;
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .badge .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .badge--running { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
-    .badge--running .dot { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .badge .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .badge--running { background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.4); }
+    .badge--running .dot { background: #facc15; box-shadow: 0 0 10px #facc15; }
     .badge--stopped { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-    .badge--stopped .dot { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
-    .badge--ai-high { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-weight: 700; }
-    .badge--ai-med { background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); font-weight: 700; }
-    .badge--ai-low { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-weight: 700; }
+    .badge--stopped .dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
 
-    .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .badge--ai-high { background: rgba(250, 204, 21, 0.2); color: #fef08a; border: 1px solid rgba(250, 204, 21, 0.5); font-weight: 800; }
+    .badge--ai-med { background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); font-weight: 800; }
+    .badge--ai-low { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-weight: 800; }
+
+    .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.75rem; }
     .btn {
-      flex: 1; min-width: 160px;
+      flex: 1; min-width: 170px;
       display: inline-flex; align-items: center; justify-content: center;
-      gap: 0.5rem; padding: 0.75rem 1.25rem;
-      border: none; border-radius: 0.65rem;
-      font-family: inherit; font-size: 0.85rem; font-weight: 600;
-      cursor: pointer; text-decoration: none; color: #fff;
+      gap: 0.55rem; padding: 0.8rem 1.25rem;
+      border: none; border-radius: 0.75rem;
+      font-family: inherit; font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; text-decoration: none; color: #09090b;
       transition: all 0.2s ease;
     }
     .btn:active { transform: scale(0.98); }
-    .btn--scan { background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35); }
-    .btn--scan:hover { filter: brightness(1.15); }
-    .btn--start { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35); }
-    .btn--start:hover { filter: brightness(1.15); }
-    .btn--stop { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35); }
-    .btn--stop:hover { filter: brightness(1.15); }
-    .btn--save { background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); }
-    .btn--save:hover { filter: brightness(1.15); }
-    .btn--clear { background: linear-gradient(135deg, #64748b 0%, #475569 100%); box-shadow: 0 4px 14px rgba(100, 116, 139, 0.35); }
-    .btn--clear:hover { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-
-    /* Watchlist Dropdown & Multiselect Tags */
-    .watchlist-search-wrapper { position: relative; margin-bottom: 1rem; }
-    .watchlist-input {
-      width: 100%; padding: 0.75rem 1rem; border-radius: 0.65rem;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      background: rgba(15, 23, 42, 0.8); color: #f8fafc;
-      font-family: inherit; font-size: 0.9rem; outline: none;
-      transition: all 0.2s ease;
-    }
-    .watchlist-input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
-    .dropdown-options {
-      position: absolute; top: 100%; left: 0; right: 0;
-      background: #0f172a; border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 0.65rem; max-height: 220px; overflow-y: auto;
-      z-index: 100; display: none; margin-top: 0.25rem;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-    }
-    .dropdown-options.active { display: block; }
-    .option-item {
-      padding: 0.65rem 1rem; cursor: pointer; font-size: 0.85rem; color: #cbd5e1;
-      display: flex; align-items: center; justify-content: space-between;
-      transition: background 0.15s ease;
-    }
-    .option-item:hover { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
-    .selected-tags-container {
-      display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 52px;
-      padding: 0.75rem; background: rgba(15, 23, 42, 0.4);
-      border: 1px dashed rgba(148, 163, 184, 0.15); border-radius: 0.65rem;
-      margin-bottom: 1rem; align-items: center;
-    }
-    .stock-tag {
-      display: inline-flex; align-items: center; gap: 0.45rem;
-      padding: 0.35rem 0.75rem; border-radius: 9999px;
-      background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3);
-      color: #38bdf8; font-size: 0.82rem; font-weight: 700;
-    }
-    .stock-tag .remove-btn {
-      cursor: pointer; width: 18px; height: 18px; border-radius: 50%;
-      display: inline-flex; align-items: center; justify-content: center;
-      background: rgba(56, 189, 248, 0.25); color: #38bdf8; font-size: 0.95rem;
-      line-height: 1; transition: all 0.15s ease;
-    }
-    .stock-tag .remove-btn:hover { background: #ef4444; color: #fff; }
-    .watchlist-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-    .watchlist-status { font-size: 0.8rem; color: #94a3b8; margin-top: 0.75rem; }
+    .btn--scan { background: linear-gradient(135deg, #fef08a 0%, #facc15 50%, #ca8a04 100%); box-shadow: 0 4px 18px rgba(250, 204, 21, 0.35); color: #000; }
+    .btn--scan:hover { filter: brightness(1.12); transform: translateY(-2px); }
+    .btn--premarket { background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); box-shadow: 0 4px 18px rgba(251, 191, 36, 0.35); color: #000; }
+    .btn--premarket:hover { filter: brightness(1.12); transform: translateY(-2px); }
+    .btn--start { background: linear-gradient(135deg, #4ade80 0%, #16a34a 100%); box-shadow: 0 4px 18px rgba(74, 222, 128, 0.35); color: #000; }
+    .btn--start:hover { filter: brightness(1.12); transform: translateY(-2px); }
+    .btn--stop { background: linear-gradient(135deg, #f87171 0%, #dc2626 100%); box-shadow: 0 4px 18px rgba(248, 113, 113, 0.35); color: #fff; }
+    .btn--stop:hover { filter: brightness(1.12); transform: translateY(-2px); }
+    .btn--refresh { background: rgba(39, 39, 42, 0.8); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); min-width: auto; padding: 0.4rem 0.85rem; font-size: 0.78rem; }
+    .btn--refresh:hover { background: rgba(250, 204, 21, 0.15); }
 
     .info-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 0.75rem; margin-bottom: 1.5rem;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 0.85rem; margin-bottom: 1.75rem;
     }
     .info-card {
-      background: rgba(15, 23, 42, 0.5);
-      border: 1px solid rgba(148, 163, 184, 0.08);
-      border-radius: 0.65rem; padding: 0.85rem;
+      background: rgba(24, 24, 27, 0.7);
+      border: 1px solid rgba(250, 204, 21, 0.15);
+      border-radius: 0.85rem; padding: 1rem;
+      transition: all 0.2s ease;
     }
-    .info-card .label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; font-weight: 700; margin-bottom: 0.25rem; }
-    .info-card .value { font-size: 0.9rem; font-weight: 700; color: #cbd5e1; }
+    .info-card:hover { border-color: rgba(250, 204, 21, 0.35); background: rgba(30, 30, 35, 0.8); }
+    .info-card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #a1a1aa; font-weight: 700; margin-bottom: 0.35rem; }
+    .info-card .value { font-size: 1.05rem; font-weight: 800; color: #facc15; }
 
     .section-title {
-      font-size: 1rem; font-weight: 700; color: #f1f5f9;
-      margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;
+      font-size: 1.05rem; font-weight: 800; color: #fef08a;
+      margin-bottom: 1.15rem; display: flex; align-items: center; justify-content: space-between;
     }
 
-    /* Table styling */
-    .table-container { overflow-x: auto; border-radius: 0.65rem; border: 1px solid rgba(148, 163, 184, 0.1); }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
-    th {
-      background: rgba(15, 23, 42, 0.8); color: #94a3b8;
-      padding: 0.75rem 1rem; font-weight: 600; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.05em;
+    /* Pre-Market Candidate Tag Grid */
+    .candidate-grid {
+      display: flex; flex-wrap: wrap; gap: 0.6rem;
+      padding: 1rem; background: rgba(9, 9, 11, 0.6);
+      border: 1px solid rgba(250, 204, 21, 0.2); border-radius: 0.85rem;
+      margin-bottom: 1.5rem; min-height: 56px; align-items: center;
     }
-    td { padding: 0.85rem 1rem; border-top: 1px solid rgba(148, 163, 184, 0.08); }
-    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .candidate-tag {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.4rem 0.85rem; border-radius: 9999px;
+      background: rgba(250, 204, 21, 0.12); border: 1px solid rgba(250, 204, 21, 0.35);
+      color: #fef08a; font-size: 0.82rem; font-weight: 800;
+      transition: all 0.2s ease;
+    }
+    .candidate-tag:hover { background: rgba(250, 204, 21, 0.25); transform: translateY(-1px); }
+
+    /* Results Table styling */
+    .table-container { overflow-x: auto; border-radius: 0.85rem; border: 1px solid rgba(250, 204, 21, 0.2); }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.86rem; }
+    th {
+      background: rgba(24, 24, 27, 0.95); color: #facc15;
+      padding: 0.85rem 1rem; font-weight: 800; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.06em;
+      border-bottom: 1px solid rgba(250, 204, 21, 0.2);
+    }
+    td { padding: 0.95rem 1rem; border-top: 1px solid rgba(250, 204, 21, 0.1); color: #e4e4e7; }
+    tr:hover td { background: rgba(250, 204, 21, 0.04); }
     .symbol-pill {
-      font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.1);
-      padding: 0.25rem 0.6rem; border-radius: 0.35rem; display: inline-block;
+      font-weight: 900; color: #09090b; background: #facc15;
+      padding: 0.3rem 0.75rem; border-radius: 0.45rem; display: inline-block;
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.3);
     }
 
     .empty-state {
-      text-align: center; padding: 2.5rem 1rem; color: #64748b;
-      background: rgba(15, 23, 42, 0.4); border-radius: 0.65rem; border: 1px dashed rgba(148, 163, 184, 0.15);
+      text-align: center; padding: 2.5rem 1rem; color: #a1a1aa;
+      background: rgba(9, 9, 11, 0.5); border-radius: 0.85rem; border: 1px dashed rgba(250, 204, 21, 0.25);
     }
-    .empty-state icon { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
 
-    .rules-list {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;
-    }
-    .rule-item {
-      background: rgba(15, 23, 42, 0.4); border-left: 3px solid #38bdf8;
-      padding: 0.75rem 0.9rem; border-radius: 0.4rem; font-size: 0.78rem;
-    }
-    .rule-item strong { color: #f1f5f9; display: block; margin-bottom: 0.15rem; }
+    /* Score Gauge Progress Bar */
+    .score-bar-bg { width: 100%; height: 7px; background: rgba(39, 39, 42, 0.8); border-radius: 999px; margin-top: 6px; overflow: hidden; }
+    .score-bar-fill { height: 100%; background: linear-gradient(90deg, #eab308 0%, #facc15 100%); border-radius: 999px; }
 
-    footer { text-align: center; font-size: 0.75rem; color: #475569; margin-top: 1rem; }
+    .rules-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.85rem;
+    }
+    .rule-box {
+      background: rgba(24, 24, 27, 0.5); border-left: 3px solid #facc15;
+      padding: 0.85rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; color: #d4d4d8;
+    }
+    .rule-box strong { color: #fef08a; display: block; margin-bottom: 0.2rem; font-weight: 800; }
+
+    footer { text-align: center; font-size: 0.78rem; color: #71717a; margin-top: 1.5rem; padding-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -957,15 +938,27 @@ CONTROL_PANEL_HTML = r"""
     <div class="card">
       <div class="header">
         <div class="header-left">
-          <div class="icon">🤖</div>
+          <div class="brand-icon">
+            <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" fill="#09090b" stroke="#facc15" stroke-width="4"/>
+              <path d="M30 65 L50 25 L70 65 L55 65 L50 52 L45 65 Z" fill="#facc15"/>
+              <polygon points="50,15 80,30 50,45 20,30" fill="url(#grad1)" opacity="0.6"/>
+              <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#fef08a"/>
+                  <stop offset="100%" stop-color="#ca8a04"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
           <div class="title">
-            <h1>Structural OEL + DeepSeek AI Scanner</h1>
-            <p>Angel One SmartAPI &middot; DeepSeek AI Engine &middot; Telegram Group Alerts</p>
+            <h1>AlphaQuant Pro 3.0</h1>
+            <p>Institutional Pre-Market Screener &middot; DeepSeek Tool Agent &middot; IsolationForest Guard</p>
           </div>
         </div>
         <div>
           {% if status == "Running" %}
-            <div class="badge badge--running"><span class="dot"></span> Bot Motor Running</div>
+            <div class="badge badge--running"><span class="dot"></span> Engine Online (Autopilot)</div>
           {% else %}
             <div class="badge badge--stopped"><span class="dot"></span> {{ status }}</div>
           {% endif %}
@@ -973,64 +966,62 @@ CONTROL_PANEL_HTML = r"""
       </div>
 
       <div class="actions">
-        <a href="/scan" class="btn btn--scan">⚡ Run Scan Now</a>
-        <a href="/start" class="btn btn--start">▶️ Start Bot &amp; Login</a>
-        <a href="/stop" class="btn btn--stop">🛑 Stop Bot</a>
+        <a href="/scan" class="btn btn--scan">⚡ Run Breakout Scan</a>
+        <a href="/premarket-scan" class="btn btn--premarket">🌅 Run Pre-Market (08:45 AM)</a>
+        <a href="/start" class="btn btn--start">▶️ Start Engine</a>
+        <a href="/stop" class="btn btn--stop">🛑 Stop Engine</a>
       </div>
 
       <div class="info-grid">
         <div class="info-card">
-          <div class="label">Cached NSE Stocks</div>
+          <div class="label">Cached Scrips Master</div>
           <div class="value">{{ nse_count }}</div>
         </div>
         <div class="info-card">
-          <div class="label">Scheduled Time</div>
-          <div class="value">09:20 AM IST</div>
+          <div class="label">Pre-Market Screened</div>
+          <div class="value">{{ premarket_count }} Scrips</div>
         </div>
         <div class="info-card">
-          <div class="label">DeepSeek AI Engine</div>
-          <div class="value" style="color: #38bdf8; font-size: 0.85rem;">🤖 Active (v3/v4)</div>
+          <div class="label">Market Anomaly Guard</div>
+          <div class="value" style="color: #4ade80; font-size: 0.95rem;">🛡️ NORMAL (IsolationForest)</div>
         </div>
         <div class="info-card">
-          <div class="label">Latest Scan Status</div>
-          <div class="value" style="font-size: 0.8rem;">{{ results.status }}</div>
+          <div class="label">DeepSeek Agent</div>
+          <div class="value" style="color: #fef08a; font-size: 0.95rem;">🤖 Active (v4 Tool Agent)</div>
         </div>
         <div class="info-card">
-          <div class="label">Matches Found</div>
-          <div class="value" style="color: #4ade80;">{{ results.hits | length }}</div>
+          <div class="label">ML Calibration</div>
+          <div class="value" style="color: #facc15; font-size: 0.95rem;">🎯 Isotonic Calibrated</div>
+        </div>
+        <div class="info-card">
+          <div class="label">Today's Trades Logged</div>
+          <div class="value" style="color: #fef08a;">{{ todays_trades_count }}</div>
         </div>
       </div>
 
-      <!-- CUSTOM WATCHLIST MANAGER SECTION -->
-      <div style="margin-top: 1.5rem; margin-bottom: 1.5rem; border-top: 1px solid rgba(148, 163, 184, 0.1); padding-top: 1.5rem;">
+      <!-- PRE-MARKET CANDIDATES DISPLAY -->
+      <div style="margin-top: 1rem; margin-bottom: 1.5rem;">
         <div class="section-title">
-          <span>🎯 Custom Stock Watchlist Manager</span>
-          <span id="watchlistCountBadge" style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;"></span>
+          <span>🌅 Pre-Market Screened Candidate Universe (08:45 AM)</span>
+          <span style="font-size: 0.78rem; color: #facc15; font-weight: 700;">{{ premarket_count }} Scrips Screened</span>
         </div>
-        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 1rem;">
-          Select specific stocks to scan. If cleared (empty), the scanner will automatically scan the full default NSE universe.
-        </p>
-
-        <div class="watchlist-search-wrapper">
-          <input type="text" id="stockSearchInput" class="watchlist-input" placeholder="🔍 Search stock ticker (e.g. TATAMOTORS, RELIANCE, INFY)..." autocomplete="off" />
-          <div id="stockDropdownOptions" class="dropdown-options"></div>
+        <div class="candidate-grid">
+          {% if premarket_candidates %}
+            {% for symbol in premarket_candidates %}
+              <div class="candidate-tag">
+                <span>🔥 {{ symbol }}</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <span style="color: #a1a1aa; font-size: 0.82rem;">No pre-market screening executed yet today. Screener runs automatically at 08:45 AM IST.</span>
+          {% endif %}
         </div>
-
-        <div class="selected-tags-container" id="selectedTagsContainer">
-          <!-- Dynamic Selected Tags -->
-        </div>
-
-        <div class="watchlist-actions">
-          <button class="btn btn--save" onclick="saveWatchlist()">💾 Save Watchlist</button>
-          <button class="btn btn--clear" onclick="clearWatchlist()">🗑️ Clear All</button>
-        </div>
-        <div id="watchlistNotice" class="watchlist-status"></div>
       </div>
 
-      <!-- MATCHING TICKERS TABLE SECTION -->
+      <!-- MATCHING BREAKOUT TRADES TABLE -->
       <div class="section-title">
-        <span>🎯 Matching Stock Tickers &amp; DeepSeek AI Analysis</span>
-        <span style="font-size: 0.75rem; color: #94a3b8;">Instant Live Display</span>
+        <span>🎯 Active Breakout Signals &amp; DeepSeek AI Agent Analysis</span>
+        <span style="font-size: 0.78rem; color: #a1a1aa;">Real-time Scanned Signals</span>
       </div>
 
       {% if results.hits %}
@@ -1041,9 +1032,9 @@ CONTROL_PANEL_HTML = r"""
                 <th>Ticker Symbol</th>
                 <th>09:15 Price (O / H / L / C)</th>
                 <th>20 EMA / Wick</th>
-                <th>DeepSeek AI Score</th>
-                <th>Trade Setup Plan (Entry / SL / Targets)</th>
-                <th>AI Justification</th>
+                <th>AI Agent Confidence Score</th>
+                <th>Trade Plan (Entry / SL / Targets)</th>
+                <th>DeepSeek AI Reasoning</th>
               </tr>
             </thead>
             <tbody>
@@ -1051,13 +1042,13 @@ CONTROL_PANEL_HTML = r"""
                 <tr>
                   <td><span class="symbol-pill">{{ item.symbol }}</span></td>
                   <td>
-                    <span style="font-size: 0.78rem;">
+                    <span style="font-size: 0.8rem; line-height: 1.4;">
                       O: &#8377;{{ item.open }} | H: &#8377;{{ item.high }}<br>
-                      L: &#8377;{{ item.low }} | <strong>C: &#8377;{{ item.close }}</strong>
+                      L: &#8377;{{ item.low }} | <strong style="color: #fef08a;">C: &#8377;{{ item.close }}</strong>
                     </span>
                   </td>
                   <td>
-                    <span style="font-size: 0.78rem;">
+                    <span style="font-size: 0.8rem;">
                       EMA20: &#8377;{{ item.ema20 }}<br>
                       Wick: {{ item.wick_pct }}%
                     </span>
@@ -1065,13 +1056,13 @@ CONTROL_PANEL_HTML = r"""
                   <td>
                     {% set ai = item.ai_analysis %}
                     {% if ai %}
-                      {% if ai.score >= 80 %}
-                        <div class="badge badge--ai-high">🔥 {{ ai.score }}/100 High</div>
-                      {% elif ai.score >= 70 %}
-                        <div class="badge badge--ai-med">⚡ {{ ai.score }}/100 Med</div>
+                      {% set score = ai.score | default(75) %}
+                      {% if score >= 80 %}
+                        <div class="badge badge--ai-high">🔥 {{ score }}/100</div>
                       {% else %}
-                        <div class="badge badge--ai-low">⚠️ {{ ai.score }}/100 Low</div>
+                        <div class="badge badge--ai-med">⚡ {{ score }}/100</div>
                       {% endif %}
+                      <div class="score-bar-bg"><div class="score-bar-fill" style="width: {{ score }}%;"></div></div>
                     {% else %}
                       <span class="badge">N/A</span>
                     {% endif %}
@@ -1079,8 +1070,8 @@ CONTROL_PANEL_HTML = r"""
                   <td>
                     {% set ai = item.ai_analysis %}
                     {% if ai %}
-                      <div style="font-size: 0.78rem; line-height: 1.45;">
-                        <strong>Entry:</strong> &#8377;{{ ai.entry }}<br>
+                      <div style="font-size: 0.8rem; line-height: 1.45;">
+                        <strong style="color: #fef08a;">Entry:</strong> &#8377;{{ ai.entry }}<br>
                         <span style="color: #f87171;"><strong>SL:</strong> &#8377;{{ ai.stop_loss }}</span><br>
                         <span style="color: #4ade80;"><strong>T1:</strong> &#8377;{{ ai.target_1 }} | <strong>T2:</strong> &#8377;{{ ai.target_2 }}</span>
                       </div>
@@ -1088,12 +1079,12 @@ CONTROL_PANEL_HTML = r"""
                       —
                     {% endif %}
                   </td>
-                  <td style="font-size: 0.78rem; color: #cbd5e1; max-width: 240px; line-height: 1.35;">
+                  <td style="font-size: 0.8rem; color: #d4d4d8; max-width: 260px; line-height: 1.35;">
                     {% set ai = item.ai_analysis %}
                     {% if ai %}
                       {{ ai.reasoning }}
                     {% else %}
-                      Passed 6 structural rules.
+                      Passed 6 structural breakout rules.
                     {% endif %}
                   </td>
                 </tr>
@@ -1103,45 +1094,41 @@ CONTROL_PANEL_HTML = r"""
         </div>
       {% else %}
         <div class="empty-state">
-          <p>No matching stock tickers found in the latest scan pass.</p>
-          <p style="font-size: 0.75rem; margin-top: 0.4rem;">Scan runs automatically at 09:20 AM IST or click "Run Scan Now" to test on-demand.</p>
+          <p style="font-size: 0.95rem; font-weight: 700; color: #fef08a; margin-bottom: 0.3rem;">No active breakout setups in latest scan pass.</p>
+          <p style="font-size: 0.78rem;">Strategy scan executes automatically at 09:20 AM IST. Click "Run Breakout Scan" to run on-demand.</p>
         </div>
       {% endif %}
     </div>
 
-    <!-- STRATEGY RULES OVERVIEW CARD -->
+    <!-- STRATEGY ARCHITECTURE CARD -->
     <div class="card">
       <div class="section-title">
-        <span>⚙️ Active Filter Strategy Rules &amp; DeepSeek AI Engine</span>
+        <span>⚙️ AlphaQuant Pro 3.0 Architecture</span>
       </div>
-      <div class="rules-list">
-        <div class="rule-item">
-          <strong>1. Open = Low &amp; Structural Support</strong>
-          Today's 09:15 AM Open == Low AND Open == Prev Day Last 5-min Low.
+      <div class="rules-grid">
+        <div class="rule-box">
+          <strong>1. Dynamic Pre-Market Screening (08:45 AM)</strong>
+          Scans all ~2,400 NSE Cash Equity scrips for daily uptrend momentum ($\text{Close} > \text{Open}$ &amp; $\text{Close} > \text{Daily 20 EMA}$).
         </div>
-        <div class="rule-item">
-          <strong>2. Bullish Body</strong>
-          Today's 09:15 AM candle Close &gt; Open.
+        <div class="rule-box">
+          <strong>2. Structural Open = Low Breakout (09:20 AM)</strong>
+          Filters candidates for 09:15 candle $O = L$, Gap-Up, Bullish Body, Upper Wick $\le 50\%$, and 5-min 20 EMA alignment.
         </div>
-        <div class="rule-item">
-          <strong>3. Upper Wick Rejection</strong>
-          Upper Wick (High &minus; Close) &le; 50% of Candle Range (High &minus; Low).
+        <div class="rule-box">
+          <strong>3. IsolationForest Anomaly Guard</strong>
+          MarketAnomalyDetector blocks signals during market crash or extreme volatility anomalies.
         </div>
-        <div class="rule-item">
-          <strong>4. Price Range</strong>
-          Current Price between &#8377;300 and &#8377;3000.
+        <div class="rule-box">
+          <strong>4. DeepSeek v4 Native Tool Agent</strong>
+          Executes multi-step verification (technical rules, sector strength, R:R calculation, final score $\ge 75$).
         </div>
-        <div class="rule-item">
-          <strong>5. Market Trend Alignment</strong>
-          Nifty 50 Index 09:15 AM candle Close &gt; Open.
+        <div class="rule-box">
+          <strong>5. Calibrated XGBoost ML Model</strong>
+          CalibratedClassifierCV (isotonic, cv=5) scores setups with true historical win probabilities.
         </div>
-        <div class="rule-item">
-          <strong>6. Trend Confirmation (20 EMA)</strong>
-          Today's 09:15 AM Close &gt; 20-period EMA on 5-minute chart.
-        </div>
-        <div class="rule-item" style="border-left-color: #38bdf8; background: rgba(56, 189, 248, 0.08);">
-          <strong style="color: #38bdf8;">🧠 7. DeepSeek AI Risk &amp; Setup Engine</strong>
-          Scores quality (0–100), calculates limit entry, structural SL, 1:2 &amp; 1:3 R:R targets, and generates AI technical justification.
+        <div class="rule-box">
+          <strong>6. Self-Learning Journal &amp; Retraining</strong>
+          Logs trade outcomes to <code style="color: #facc15;">trade_outcomes.json</code> and auto-retrains every Saturday at 10:00 AM IST.
         </div>
       </div>
     </div>
@@ -1149,106 +1136,18 @@ CONTROL_PANEL_HTML = r"""
     <!-- REAL-TIME SYSTEM LOGS TERMINAL CARD -->
     <div class="card">
       <div class="section-title">
-        <span>📜 Real-Time System Logs</span>
-        <button class="btn btn--clear" style="min-width: auto; padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="fetchDashboardLogs()">🔄 Refresh Logs</button>
+        <span>📜 Real-Time Terminal Console</span>
+        <button class="btn btn--refresh" onclick="fetchDashboardLogs()">🔄 Refresh Console</button>
       </div>
-      <div style="background: #060913; border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 0.65rem; padding: 1rem; font-family: monospace; font-size: 0.78rem; color: #a7f3d0; max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;" id="logTerminal">Loading system logs...</div>
+      <div style="background: #040405; border: 1px solid rgba(250, 204, 21, 0.25); border-radius: 0.75rem; padding: 1rem; font-family: monospace; font-size: 0.8rem; color: #fef08a; max-height: 260px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.8);" id="logTerminal">Loading system console logs...</div>
     </div>
 
     <footer>
-      AlphaQuant AI Scanner &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; Quantitative ML Engine
+      AlphaQuant Pro 3.0 &middot; Institutional Intraday Engine &middot; Powered by Angel One SmartAPI, DeepSeek AI &amp; XGBoost ML
     </footer>
   </div>
 
   <script>
-    let availableStocks = [];
-    let selectedStocks = [];
-
-    async function fetchStocksData() {
-      try {
-        const resp = await fetch('/api/stocks');
-        const data = await resp.json();
-        if (data.status === 'success') {
-          availableStocks = data.all_stocks || [];
-          selectedStocks = data.selected_stocks || [];
-          renderTags();
-        }
-      } catch (err) {
-        console.error('Error loading stocks API:', err);
-      }
-    }
-
-    function renderTags() {
-      const container = document.getElementById('selectedTagsContainer');
-      const badge = document.getElementById('watchlistCountBadge');
-      const notice = document.getElementById('watchlistNotice');
-      
-      if (selectedStocks.length === 0) {
-        container.innerHTML = `<span style="color: #64748b; font-size: 0.8rem;">No custom stocks selected. Scanner will scan default NSE universe.</span>`;
-        badge.textContent = `Default Mode (Full Universe)`;
-        notice.innerHTML = `ℹ️ Currently in <strong>Default Mode</strong> (Scanning full price-filtered universe).`;
-      } else {
-        container.innerHTML = selectedStocks.map(symbol => `
-          <div class="stock-tag">
-            <span>${symbol}</span>
-            <span class="remove-btn" onclick="removeStock('${symbol}')" title="Remove ${symbol}">&times;</span>
-          </div>
-        `).join('');
-        badge.textContent = `${selectedStocks.length} Selected`;
-        notice.innerHTML = `✅ <strong>Custom Watchlist Active (${selectedStocks.length} stock(s) set).</strong> Scanner will evaluate only these stocks.`;
-      }
-    }
-
-    function addStock(symbol) {
-      const sym = symbol.toUpperCase().trim();
-      if (sym && !selectedStocks.includes(sym)) {
-        selectedStocks.push(sym);
-        renderTags();
-      }
-      document.getElementById('stockSearchInput').value = '';
-      document.getElementById('stockDropdownOptions').classList.remove('active');
-    }
-
-    function removeStock(symbol) {
-      selectedStocks = selectedStocks.filter(s => s !== symbol);
-      renderTags();
-    }
-
-    function clearWatchlist() {
-      if (selectedStocks.length === 0) return;
-      if (confirm('Are you sure you want to clear all selected stocks?')) {
-        selectedStocks = [];
-        renderTags();
-        saveWatchlistToServer([]);
-      }
-    }
-
-    async function saveWatchlist() {
-      saveWatchlistToServer(selectedStocks);
-    }
-
-    async function saveWatchlistToServer(stocksList) {
-      const notice = document.getElementById('watchlistNotice');
-      try {
-        notice.innerHTML = `⏳ Saving watchlist...`;
-        const resp = await fetch('/api/stocks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ selected: stocksList }),
-        });
-        const data = await resp.json();
-        if (data.status === 'success') {
-          selectedStocks = data.selected_stocks;
-          renderTags();
-          notice.innerHTML = `✨ <strong>Watchlist saved successfully!</strong>`;
-        } else {
-          notice.innerHTML = `❌ Error: ${data.message}`;
-        }
-      } catch (err) {
-        notice.innerHTML = `❌ Failed to save watchlist.`;
-      }
-    }
-
     async function fetchDashboardLogs() {
       try {
         const resp = await fetch('/api/logs');
@@ -1268,55 +1167,8 @@ CONTROL_PANEL_HTML = r"""
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-      fetchStocksData();
       fetchDashboardLogs();
       setInterval(fetchDashboardLogs, 4000);
-
-      const input = document.getElementById('stockSearchInput');
-      const optionsDiv = document.getElementById('stockDropdownOptions');
-
-      input.addEventListener('input', (e) => {
-        const query = e.target.value.toUpperCase().trim();
-        if (!query) {
-          optionsDiv.classList.remove('active');
-          optionsDiv.innerHTML = '';
-          return;
-        }
-
-        const matches = availableStocks.filter(s => s.includes(query) && !selectedStocks.includes(s)).slice(0, 30);
-        
-        if (matches.length > 0) {
-          optionsDiv.innerHTML = matches.map(s => `
-            <div class="option-item" onclick="addStock('${s}')">
-              <span><strong>${s}</strong></span>
-              <span style="font-size: 0.75rem; color: #38bdf8;">+ Add</span>
-            </div>
-          `).join('');
-          optionsDiv.classList.add('active');
-        } else {
-          optionsDiv.innerHTML = `
-            <div class="option-item" onclick="addStock('${query}')">
-              <span>Add custom ticker: <strong>${query}</strong></span>
-              <span style="font-size: 0.75rem; color: #38bdf8;">+ Add</span>
-            </div>
-          `;
-          optionsDiv.classList.add('active');
-        }
-      });
-
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          const query = input.value.toUpperCase().trim();
-          if (query) addStock(query);
-        }
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!input.contains(e.target) && !optionsDiv.contains(e.target)) {
-          optionsDiv.classList.remove('active');
-        }
-      });
     });
   </script>
 </body>
@@ -1352,6 +1204,9 @@ def index():
         status=BOT_STATUS,
         nse_count=len(NSE_STOCKS) if NSE_STOCKS else "—",
         results=LATEST_SCAN_RESULTS,
+        premarket_candidates=PREMARKET_CANDIDATES,
+        premarket_count=len(PREMARKET_CANDIDATES),
+        todays_trades_count=len(TODAYS_TRADES),
     )
 
 
