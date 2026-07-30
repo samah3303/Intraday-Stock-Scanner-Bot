@@ -59,14 +59,15 @@ log_formatter = logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s",
 memory_handler = MemoryLogHandler()
 memory_handler.setFormatter(log_formatter)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
-logger.addHandler(memory_handler)
-logging.getLogger().addHandler(memory_handler)
+logger = logging.getLogger("AlphaQuantPro")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+if not logger.handlers:
+    stream_h = logging.StreamHandler()
+    stream_h.setFormatter(log_formatter)
+    logger.addHandler(stream_h)
+    logger.addHandler(memory_handler)
 
 # ---------------------------------------------------------------------------
 # Flask App Setup
