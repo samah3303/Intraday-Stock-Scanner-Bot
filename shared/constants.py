@@ -8,7 +8,7 @@ Nifty token, and other system-wide configuration values.
 # ── Nifty 50 Index Token ──────────────────────────────────────────────
 NIFTY_TOKEN = "99926000"
 
-# ── Price Universe Bounds ─────────────────────────────────────────────
+# ── Price Universe Bounds (Strict ₹300–₹3,000 range to eliminate penny stock noise) ──
 MIN_STOCK_PRICE = 300.0
 MAX_STOCK_PRICE = 3000.0
 

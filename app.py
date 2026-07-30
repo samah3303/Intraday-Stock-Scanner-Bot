@@ -87,10 +87,8 @@ if os.getenv("RENDER") or os.getenv("VERCEL"):
 else:
     data_dir = os.path.dirname(__file__)
 
-SELECTED_STOCKS_FILE = os.path.join(data_dir, "selected_stocks.json")
 PREMARKET_CANDIDATES_FILE = os.path.join(data_dir, "premarket_candidates.json")
-SELECTED_STOCKS: list[str] = list(DEFAULT_100_STOCKS)  # Custom watchlist stocks to scan
-PREMARKET_CANDIDATES: list[str] = []                   # High-probability pre-filtered candidates
+PREMARKET_CANDIDATES: list[str] = []  # High-probability pre-filtered candidates (screened at 08:45 AM)
 
 
 def load_premarket_candidates() -> list[str]:
@@ -110,44 +108,7 @@ def load_premarket_candidates() -> list[str]:
     return PREMARKET_CANDIDATES
 
 
-def load_selected_stocks() -> list[str]:
-    """Load user selected stock symbols from local JSON file or fallback to DEFAULT_100_STOCKS."""
-    global SELECTED_STOCKS
-    if os.path.exists(SELECTED_STOCKS_FILE):
-        try:
-            with open(SELECTED_STOCKS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list) and len(data) > 0:
-                    SELECTED_STOCKS = [str(s).upper().strip() for s in data if s]
-                    logger.info("Loaded %d selected stock(s) from watchlist file.", len(SELECTED_STOCKS))
-                    return SELECTED_STOCKS
-        except Exception as exc:
-            logger.error("Failed to load selected_stocks.json: %s", exc)
-    
-    SELECTED_STOCKS = list(DEFAULT_100_STOCKS)
-    logger.info("Defaulted watchlist to %d top liquid bullish stocks.", len(SELECTED_STOCKS))
-    return SELECTED_STOCKS
-
-
-def save_selected_stocks(stocks: list[str]) -> bool:
-    """Save user selected stock symbols to local JSON file."""
-    global SELECTED_STOCKS
-    try:
-        clean_stocks = sorted(list(set(str(s).upper().strip() for s in stocks if s)))
-        if not clean_stocks:
-            clean_stocks = list(DEFAULT_100_STOCKS)
-        SELECTED_STOCKS = clean_stocks
-        with open(SELECTED_STOCKS_FILE, "w", encoding="utf-8") as f:
-            json.dump(SELECTED_STOCKS, f, indent=2)
-        logger.info("Saved %d selected stock(s) to watchlist file.", len(SELECTED_STOCKS))
-        return True
-    except Exception as exc:
-        logger.error("Failed to save selected_stocks.json: %s", exc)
-        return False
-
-
-# Initialize watchlist & pre-market candidates on startup
-load_selected_stocks()
+# Initialize pre-market candidates on startup
 load_premarket_candidates()
 
 LATEST_SCAN_RESULTS = {
@@ -480,7 +441,7 @@ def run_premarket_screening() -> list[str]:
     send_telegram("🌅 *Pre-Market Screening Started…*\n_Filtering daily bullish trends before market open (08:45 AM)._")
 
     candidates = []
-    base_universe = SELECTED_STOCKS if SELECTED_STOCKS else list(NSE_STOCKS.keys())
+    base_universe = list(NSE_STOCKS.keys())
 
     for symbol in base_universe:
         token = NSE_STOCKS.get(symbol)
@@ -630,10 +591,6 @@ def _execute_strategy_scan_internal() -> None:
     if PREMARKET_CANDIDATES:
         stock_items = [(sym, token) for sym, token in NSE_STOCKS.items() if sym in PREMARKET_CANDIDATES]
         logger.info("Scanning pre-market candidate universe of %d stock(s)", len(stock_items))
-    elif SELECTED_STOCKS:
-        # Filter stock items to only those present in SELECTED_STOCKS
-        stock_items = [(sym, token) for sym, token in NSE_STOCKS.items() if sym in SELECTED_STOCKS]
-        logger.info("Scanning custom watchlist of %d stock(s) (configured: %d)", len(stock_items), len(SELECTED_STOCKS))
     else:
         stock_items = list(NSE_STOCKS.items())
 
@@ -1406,48 +1363,14 @@ def stop_bot():
     return redirect(url_for("index"))
 
 
-@app.route("/api/stocks", methods=["GET"])
-def get_stocks_api():
-    """Return all cached NSE symbols and currently selected watchlist stocks."""
-    all_symbols = sorted(list(NSE_STOCKS.keys()))
+@app.route("/api/premarket", methods=["GET"])
+def get_premarket_api():
+    """Return currently screened pre-market candidate stocks."""
     return jsonify({
         "status": "success",
-        "all_stocks": all_symbols,
-        "selected_stocks": SELECTED_STOCKS,
-        "total_available": len(all_symbols),
+        "premarket_candidates": PREMARKET_CANDIDATES,
+        "count": len(PREMARKET_CANDIDATES)
     })
-
-
-@app.route("/api/stocks", methods=["POST"])
-def update_stocks_api():
-    """Save updated selected stocks list."""
-    auth_err = _require_auth()
-    if auth_err:
-        return auth_err
-    data = request.get_json(silent=True) or {}
-    selected = data.get("selected", [])
-    if save_selected_stocks(selected):
-        return jsonify({
-            "status": "success",
-            "message": f"Watchlist updated with {len(SELECTED_STOCKS)} stock(s).",
-            "selected_stocks": SELECTED_STOCKS,
-        })
-    return jsonify({"status": "error", "message": "Failed to save watchlist."}), 500
-
-
-@app.route("/api/stocks/clear", methods=["POST"])
-def clear_stocks_api():
-    """Clear custom watchlist state."""
-    auth_err = _require_auth()
-    if auth_err:
-        return auth_err
-    if save_selected_stocks([]):
-        return jsonify({
-            "status": "success",
-            "message": "Watchlist cleared. Bot will scan default universe.",
-            "selected_stocks": [],
-        })
-    return jsonify({"status": "error", "message": "Failed to clear watchlist."}), 500
 
 
 @app.route("/api/results")
