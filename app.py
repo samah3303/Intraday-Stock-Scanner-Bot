@@ -13,6 +13,7 @@ import os
 import time
 import logging
 import traceback
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 IST = ZoneInfo('Asia/Kolkata')
@@ -76,13 +77,12 @@ app = Flask(__name__)
 BOT_STATUS = "Stopped"
 smart_api = None      # SmartConnect session object
 NSE_STOCKS = {}       # {symbol: token} — populated from instrument master
+SCAN_LOCK = threading.Lock() # Thread lock to prevent concurrent scan executions
 # Default 100 Top Liquid Bullish NSE Stock Universe (imported from shared.constants)
 # DEFAULT_100_STOCKS list comes from shared.constants
 
-# Handle Persistent Disk on Render, fallback to /tmp on Vercel, or local directory
-if os.getenv("RENDER"):
-    data_dir = "/var/data"
-elif os.getenv("VERCEL"):
+# Handle Persistent Disk on Render, fallback to /tmp on Vercel/Render without disk, or local directory
+if os.getenv("RENDER") or os.getenv("VERCEL"):
     data_dir = "/tmp"
 else:
     data_dir = os.path.dirname(__file__)
@@ -293,7 +293,7 @@ def automate_angel_login() -> None:
 
 def fetch_candles(token: str, exchange: str = "NSE",
                   days_back: int = 2) -> pd.DataFrame:
-    """Fetch 5-minute candle data for today and previous day."""
+    """Fetch 5-minute candle data for today and previous day with automatic retries and rate limit handling."""
     if smart_api is None:
         raise RuntimeError("SmartAPI session not initialized.")
 
@@ -308,22 +308,41 @@ def fetch_candles(token: str, exchange: str = "NSE",
         "todate": to_date.strftime("%Y-%m-%d 15:30"),
     }
 
-    raw = smart_api.getCandleData(params)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            raw = smart_api.getCandleData(params)
+            if not raw or not isinstance(raw, dict):
+                raise RuntimeError(f"Invalid API response for token {token}: {raw}")
 
-    if not raw or raw.get("status") is False:
-        raise RuntimeError(f"getCandleData error for token {token}: {raw}")
+            if raw.get("status") is False:
+                msg = str(raw.get("message", ""))
+                if attempt < max_retries - 1:
+                    logger.warning("getCandleData status False for token %s (Attempt %d/%d): %s. Retrying...", token, attempt + 1, max_retries, msg)
+                    time.sleep(0.6 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"getCandleData error for token {token}: {raw}")
 
-    data = raw.get("data", [])
-    if not data:
-        raise RuntimeError(f"No candle data returned for token {token}")
+            data = raw.get("data", [])
+            if not data:
+                raise RuntimeError(f"No candle data returned for token {token}")
 
-    df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df.sort_values("timestamp", inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+            df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df.sort_values("timestamp", inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            return df
+
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                logger.warning("fetch_candles attempt %d failed for token %s: %s. Retrying...", attempt + 1, token, exc)
+                time.sleep(0.7 * (attempt + 1))
+            else:
+                raise exc
+
+    raise RuntimeError(f"Failed to fetch candles for token {token} after {max_retries} attempts")
 
 
 # ===========================================================================
@@ -420,6 +439,19 @@ def run_strategy_scan() -> None:
     """Execute the 09:20 AM intraday scan across all universe stocks."""
     global BOT_STATUS, LATEST_SCAN_RESULTS
 
+    if not SCAN_LOCK.acquire(blocking=False):
+        logger.warning("Scan trigger ignored — another scan process is currently active.")
+        return
+
+    try:
+        _execute_strategy_scan_internal()
+    finally:
+        SCAN_LOCK.release()
+
+
+def _execute_strategy_scan_internal() -> None:
+    global BOT_STATUS, LATEST_SCAN_RESULTS
+
     # Auto-login if session expired (critical for Vercel serverless cold starts)
     if BOT_STATUS != "Running" or smart_api is None:
         logger.info("Session not active (status='%s'). Auto-login triggered...", BOT_STATUS)
@@ -497,19 +529,19 @@ def run_strategy_scan() -> None:
             df = fetch_candles(token, days_back=2)
         except Exception:
             scanned += 1
-            time.sleep(0.12)
+            time.sleep(0.35)
             continue
 
         today_candles = df[df["timestamp"].dt.date == today]
         if today_candles.empty:
             scanned += 1
-            time.sleep(0.12)
+            time.sleep(0.35)
             continue
 
         first_close = float(today_candles.iloc[0]["close"])
         if not SELECTED_STOCKS and not (MIN_STOCK_PRICE <= first_close <= MAX_STOCK_PRICE):
             scanned += 1
-            time.sleep(0.12)
+            time.sleep(0.35)
             continue
 
         in_range += 1
@@ -530,7 +562,7 @@ def run_strategy_scan() -> None:
         if scanned % 100 == 0:
             logger.info("Scan progress: %d scanned | %d matches found", scanned, len(matching_hits))
 
-        time.sleep(0.12)
+        time.sleep(0.35)
 
     # ── Update global results state ────────────────────────────────────
     LATEST_SCAN_RESULTS = {
