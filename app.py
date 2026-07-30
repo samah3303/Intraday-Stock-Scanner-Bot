@@ -88,7 +88,26 @@ else:
     data_dir = os.path.dirname(__file__)
 
 SELECTED_STOCKS_FILE = os.path.join(data_dir, "selected_stocks.json")
+PREMARKET_CANDIDATES_FILE = os.path.join(data_dir, "premarket_candidates.json")
 SELECTED_STOCKS: list[str] = list(DEFAULT_100_STOCKS)  # Custom watchlist stocks to scan
+PREMARKET_CANDIDATES: list[str] = []                   # High-probability pre-filtered candidates
+
+
+def load_premarket_candidates() -> list[str]:
+    """Load pre-market screened candidate stocks from local JSON file."""
+    global PREMARKET_CANDIDATES
+    if os.path.exists(PREMARKET_CANDIDATES_FILE):
+        try:
+            with open(PREMARKET_CANDIDATES_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    PREMARKET_CANDIDATES = [str(s).upper().strip() for s in data if s]
+                    logger.info("Loaded %d pre-market candidate(s) from cache.", len(PREMARKET_CANDIDATES))
+                    return PREMARKET_CANDIDATES
+        except Exception as exc:
+            logger.error("Failed to load premarket_candidates.json: %s", exc)
+    PREMARKET_CANDIDATES = []
+    return PREMARKET_CANDIDATES
 
 
 def load_selected_stocks() -> list[str]:
@@ -127,8 +146,9 @@ def save_selected_stocks(stocks: list[str]) -> bool:
         return False
 
 
-# Initialize watchlist on startup
+# Initialize watchlist & pre-market candidates on startup
 load_selected_stocks()
+load_premarket_candidates()
 
 LATEST_SCAN_RESULTS = {
     "status": "No scan executed yet",
@@ -432,6 +452,99 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
 
 
 # ===========================================================================
+# PRE-MARKET SCREENING EXECUTOR (08:45 AM IST)
+# ===========================================================================
+
+def run_premarket_screening() -> list[str]:
+    """
+    PRE-MARKET SCREENER (08:45 AM IST)
+    Evaluates prior day candles for the universe of stocks to pre-filter
+    high-probability bullish candidates before market open.
+    Filters:
+    1. Price Range: ₹300 <= Prev Close <= ₹3000
+    2. Bullish Daily Candle: Prev Close > Prev Open
+    3. Daily 20 EMA Trend: Prev Close > Daily 20 EMA
+    Returns pre-filtered list of symbols for 09:20 breakout scanning.
+    """
+    global BOT_STATUS, PREMARKET_CANDIDATES
+
+    if BOT_STATUS != "Running" or smart_api is None:
+        logger.info("Pre-market login check triggered...")
+        automate_angel_login()
+
+    if BOT_STATUS != "Running" or not NSE_STOCKS:
+        logger.error("Pre-market screening failed — bot session not active.")
+        return []
+
+    logger.info("── Pre-Market Screening Started (08:45 AM IST) ──")
+    send_telegram("🌅 *Pre-Market Screening Started…*\n_Filtering daily bullish trends before market open (08:45 AM)._")
+
+    candidates = []
+    base_universe = SELECTED_STOCKS if SELECTED_STOCKS else list(NSE_STOCKS.keys())
+
+    for symbol in base_universe:
+        token = NSE_STOCKS.get(symbol)
+        if not token:
+            continue
+
+        try:
+            df = fetch_candles(token, days_back=5)
+            if df.empty:
+                time.sleep(0.30)
+                continue
+
+            df_copy = df.copy()
+            df_copy["ema20"] = df_copy["close"].ewm(span=20, adjust=False).mean()
+
+            last_candle = df_copy.iloc[-1]
+            p_open = float(last_candle["open"])
+            p_close = float(last_candle["close"])
+            p_ema = float(last_candle["ema20"])
+
+            # Pre-Market Filter Rules:
+            # 1. Price Range (₹300 - ₹3000)
+            if not (MIN_STOCK_PRICE <= p_close <= MAX_STOCK_PRICE):
+                time.sleep(0.30)
+                continue
+
+            # 2. Bullish Candle (Close > Open)
+            if p_close <= p_open:
+                time.sleep(0.30)
+                continue
+
+            # 3. Bullish Trend (Close > 20 EMA)
+            if p_close <= p_ema:
+                time.sleep(0.30)
+                continue
+
+            candidates.append(symbol)
+            logger.info("PREMARKET CANDIDATE ADDED: %s (Close: ₹%.2f > EMA20: ₹%.2f)", symbol, p_close, p_ema)
+
+        except Exception as exc:
+            logger.debug("Pre-market check failed for %s: %s", symbol, exc)
+
+        time.sleep(0.30)
+
+    PREMARKET_CANDIDATES = candidates
+    try:
+        with open(PREMARKET_CANDIDATES_FILE, "w", encoding="utf-8") as f:
+            json.dump(PREMARKET_CANDIDATES, f, indent=2)
+    except Exception:
+        pass
+
+    cand_str = ", ".join(candidates[:15]) + ("..." if len(candidates) > 15 else "")
+    msg = (
+        f"🌅 *PRE-MARKET SCREENING COMPLETE*\n"
+        f"📅 *{datetime.now(IST):%d %b %Y %H:%M} IST*\n\n"
+        f"✅ *{len(candidates)} Candidate Stock(s)* passed daily trend pre-filters.\n"
+        f"_Target universe for 09:20 AM scan: {cand_str if candidates else 'None'}_"
+    )
+    send_telegram_long(msg)
+    logger.info("── Pre-market screening complete: %d candidate(s) selected ──", len(candidates))
+    return candidates
+
+
+# ===========================================================================
 # STRATEGY SCAN EXECUTOR
 # ===========================================================================
 
@@ -514,7 +627,10 @@ def _execute_strategy_scan_internal() -> None:
     scanned = 0
     in_range = 0
 
-    if SELECTED_STOCKS:
+    if PREMARKET_CANDIDATES:
+        stock_items = [(sym, token) for sym, token in NSE_STOCKS.items() if sym in PREMARKET_CANDIDATES]
+        logger.info("Scanning pre-market candidate universe of %d stock(s)", len(stock_items))
+    elif SELECTED_STOCKS:
         # Filter stock items to only those present in SELECTED_STOCKS
         stock_items = [(sym, token) for sym, token in NSE_STOCKS.items() if sym in SELECTED_STOCKS]
         logger.info("Scanning custom watchlist of %d stock(s) (configured: %d)", len(stock_items), len(SELECTED_STOCKS))
@@ -1346,10 +1462,30 @@ def get_logs_api():
     return jsonify({"status": "success", "logs": SYSTEM_LOGS})
 
 
+@app.route("/premarket-scan")
+def trigger_premarket_scan():
+    """On-demand pre-market screening execution trigger."""
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
+    if BOT_STATUS != "Running":
+        automate_angel_login()
+    candidates = run_premarket_screening()
+    return jsonify({
+        "status": "success",
+        "candidates_count": len(candidates),
+        "candidates": candidates
+    })
+
+
 @app.route("/healthz")
 def healthz():
     """Lightweight health check endpoint for external keep-alive monitoring."""
-    return jsonify({"status": "healthy", "bot_status": BOT_STATUS})
+    return jsonify({
+        "status": "healthy",
+        "bot_status": BOT_STATUS,
+        "premarket_candidates": PREMARKET_CANDIDATES
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1358,6 +1494,15 @@ def healthz():
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=IST)
     
+    # Run pre-market screening every Mon-Fri at 08:45 AM IST
+    scheduler.add_job(
+        func=run_premarket_screening,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone=IST),
+        id="premarket_screening",
+        name="Daily 08:45 AM Pre-Market Screening",
+        replace_existing=True,
+    )
+
     # Run scan every Mon-Fri at 09:20 AM IST
     scheduler.add_job(
         func=run_strategy_scan,
@@ -1368,7 +1513,7 @@ def start_scheduler():
     )
     
     scheduler.start()
-    logger.info("APScheduler started! Scan scheduled for Mon-Fri at 09:20 AM IST.")
+    logger.info("APScheduler started! Pre-market screening at 08:45 AM IST & Scan at 09:20 AM IST scheduled.")
 
 # Start the scheduler when the app starts
 start_scheduler()

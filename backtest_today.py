@@ -135,27 +135,41 @@ def fetch_candles(smart_api: SmartConnect, token: str, days_back: int = 2) -> pd
         "todate": to_date.strftime("%Y-%m-%d 15:30"),
     }
 
-    raw = smart_api.getCandleData(params)
-    if not raw or raw.get("status") is False:
-        raise RuntimeError(f"getCandleData error for token {token}: {raw}")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            raw = smart_api.getCandleData(params)
+            if not raw or not isinstance(raw, dict):
+                raise RuntimeError(f"Invalid response: {raw}")
+            if raw.get("status") is False:
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"getCandleData error for token {token}: {raw}")
 
-    data = raw.get("data", [])
-    if not data:
-        raise RuntimeError(f"No candle data for token {token}")
+            data = raw.get("data", [])
+            if not data:
+                raise RuntimeError(f"No candle data for token {token}")
 
-    df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+            df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Paise scaling fix
-    if df["close"].mean() > 50000.0:
-        logger.warning("Paise scaling detected for token %s, dividing by 100.", token)
-        df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]] / 100.0
+            # Paise scaling fix
+            if df["close"].mean() > 50000.0:
+                df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]] / 100.0
 
-    df.sort_values("timestamp", inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return df
+            df.sort_values("timestamp", inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            return df
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+            else:
+                raise exc
+
+    raise RuntimeError(f"Failed to fetch candles for token {token} after {max_retries} attempts")
 
 
 # ── Intrabar Execution Simulator (Eliminates Lookahead Bias) ──
