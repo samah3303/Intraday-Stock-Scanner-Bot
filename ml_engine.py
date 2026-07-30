@@ -11,6 +11,9 @@ import os
 from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import pandas as pd
+import joblib
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import IsolationForest
 
 # Configure Module Logger
 logger = logging.getLogger("OEL_ML_Engine")
@@ -164,32 +167,32 @@ class FeatureExtractor:
 
 class OELSetupClassifier:
     """
-    ML Classification Pipeline wrapper utilizing XGBoost / LightGBM.
+    ML Classification Pipeline wrapper utilizing XGBoost / LightGBM with CalibratedClassifierCV.
     Strictly constrained hyperparameters to prevent overfitting on financial market noise.
     """
 
     def __init__(self, model_type: str = "xgboost"):
         self.model_type = model_type.lower()
         self.is_trained = False
-        self.model = None
+        self.base_model = None
+        self.calibrated_model = None
 
         if self.model_type == "xgboost" and XGBOOST_AVAILABLE:
-            # Overfitting prevention parameters
-            self.model = xgb.XGBClassifier(
+            self.base_model = xgb.XGBClassifier(
                 n_estimators=150,
-                max_depth=3,                  # Shallow trees to avoid noise fitting
-                learning_rate=0.03,            # Low learning rate for generalization
-                subsample=0.8,                 # Stochastic sub-sampling
-                colsample_bytree=0.8,          # Feature sub-sampling
-                min_child_weight=5,            # Minimum leaf node instance weight
-                gamma=1.0,                     # Regularization split threshold
-                reg_alpha=0.1,                 # L1 regularization
-                reg_lambda=1.0,                 # L2 regularization
-                eval_metric="auc",
+                max_depth=3,
+                learning_rate=0.03,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_weight=5,
+                gamma=1.0,
+                reg_alpha=0.1,
+                reg_lambda=1.0,
+                eval_metric="logloss",
                 random_state=42
             )
         elif LIGHTGBM_AVAILABLE:
-            self.model = lgb.LGBMClassifier(
+            self.base_model = lgb.LGBMClassifier(
                 n_estimators=150,
                 max_depth=3,
                 num_leaves=7,
@@ -205,29 +208,31 @@ class OELSetupClassifier:
             logger.warning("Neither XGBoost nor LightGBM is available. Using heuristic probability estimator.")
 
     def fit(self, X: pd.DataFrame, y: pd.Series, eval_set: Optional[List[Tuple[pd.DataFrame, pd.Series]]] = None) -> None:
-        """Fit model on historical dataset (Features + Binary Outcome 1/0)."""
-        if self.model is None:
+        """Fit base model and calibrate probabilities via CalibratedClassifierCV (isotonic, cv=5)."""
+        if self.base_model is None:
             logger.error("No ML framework available to train.")
             return
 
-        logger.info("Training %s classifier on %d records...", self.model_type, len(X))
-        fit_kwargs = {"verbose": False}
-        if eval_set:
-            if self.model_type == "xgboost":
-                fit_kwargs["eval_set"] = eval_set
-            elif self.model_type == "lightgbm":
-                fit_kwargs["eval_set"] = eval_set
-        
-        self.model.fit(X, y, **fit_kwargs)
+        logger.info("Training %s base classifier on %d records...", self.model_type, len(X))
+        self.base_model.fit(X, y)
+
+        cv_folds = min(5, max(2, len(X) // 10)) if len(X) >= 10 else 2
+        try:
+            self.calibrated_model = CalibratedClassifierCV(estimator=self.base_model, method="isotonic", cv=cv_folds)
+            self.calibrated_model.fit(X, y)
+            logger.info("CalibratedClassifierCV fitting complete with %d-fold CV.", cv_folds)
+        except Exception as exc:
+            logger.warning("CalibratedClassifierCV fit warning: %s. Using base model.", exc)
+            self.calibrated_model = self.base_model
+
         self.is_trained = True
-        logger.info("Model training complete.")
+        logger.info("Model training and calibration complete.")
 
     def predict_probability(self, live_features: pd.DataFrame) -> float:
         """
-        Returns confidence probability score [0.0 to 1.0] for target hit (Class 1).
+        Returns calibrated confidence probability score [0.0 to 1.0] for target hit (Class 1).
         """
-        if not self.is_trained or self.model is None:
-            # Fallback heuristic calculation if model uninitialized
+        if not self.is_trained:
             rvol = float(live_features.get("rvol", [1.0])[0])
             ob_imbalance = float(live_features.get("orderbook_imbalance", [0.5])[0])
             wick_pct = float(live_features.get("upper_wick_pct", [20.0])[0])
@@ -242,26 +247,37 @@ class OELSetupClassifier:
             return float(min(max(score, 0.0), 0.99))
 
         try:
-            probs = self.model.predict_proba(live_features)
-            return float(probs[0][1])  # Prob of Class 1 (Target Hit)
+            active_model = self.calibrated_model if self.calibrated_model is not None else self.base_model
+            probs = active_model.predict_proba(live_features)
+            return float(probs[0][1])  # Prob of Class 1
         except Exception as exc:
             logger.error("Inference failure: %s", exc)
             return 0.0
 
     def save_model(self, path: str) -> None:
-        """Save trained model parameters to disk."""
-        if self.model and self.is_trained:
-            if hasattr(self.model, "save_model"):
-                self.model.save_model(path)
-                logger.info("Model saved to %s", path)
+        """Save calibrated model to disk using joblib."""
+        try:
+            target_obj = self.calibrated_model if self.calibrated_model is not None else self.base_model
+            if target_obj:
+                joblib.dump({"model": target_obj, "is_trained": self.is_trained, "model_type": self.model_type}, path)
+                logger.info("Calibrated model saved to %s", path)
+        except Exception as exc:
+            logger.error("Failed to save model to %s: %s", path, exc)
 
     def load_model(self, path: str) -> None:
-        """Load trained model parameters from disk."""
-        if self.model and os.path.exists(path):
-            if hasattr(self.model, "load_model"):
-                self.model.load_model(path)
-                self.is_trained = True
-                logger.info("Model loaded successfully from %s", path)
+        """Load calibrated model from disk using joblib."""
+        if os.path.exists(path):
+            try:
+                data = joblib.load(path)
+                if isinstance(data, dict) and "model" in data:
+                    self.calibrated_model = data["model"]
+                    self.is_trained = data.get("is_trained", True)
+                else:
+                    self.calibrated_model = data
+                    self.is_trained = True
+                logger.info("Calibrated model loaded successfully from %s", path)
+            except Exception as exc:
+                logger.error("Failed to load model from %s: %s", path, exc)
 
     @staticmethod
     def generate_synthetic_training_data(n_samples: int = 5000) -> Tuple[pd.DataFrame, pd.Series]:
@@ -283,8 +299,6 @@ class OELSetupClassifier:
         
         df = pd.DataFrame(data)
         
-        # Target: 1 = profitable trade (T1/T2 hit), 0 = stopped out or breakeven
-        # Strong setups: high RVOL, high orderbook imbalance, low wick, positive gap
         prob = (
             0.30
             + 0.20 * (df["rvol"] > 1.8).astype(float)
@@ -305,6 +319,84 @@ class OELSetupClassifier:
         X, y = self.generate_synthetic_training_data(n_samples)
         self.fit(X, y)
         logger.info("Model trained on %d synthetic samples. is_trained=%s", n_samples, self.is_trained)
+
+
+class MarketAnomalyDetector:
+    """
+    IsolationForest-based Market Anomaly Detector (contamination=0.05).
+    Fits on historical market metrics and exposes is_anomalous(today_metrics: dict) -> bool.
+    """
+
+    def __init__(self, contamination: float = 0.05):
+        self.contamination = contamination
+        self.model = IsolationForest(contamination=self.contamination, random_state=42)
+        self.is_fitted = False
+
+    def fit(self, historical_metrics: pd.DataFrame) -> None:
+        """Fit IsolationForest on historical market metrics."""
+        if historical_metrics.empty:
+            logger.warning("Empty metrics DataFrame provided to MarketAnomalyDetector.")
+            return
+
+        logger.info("Fitting MarketAnomalyDetector on %d records...", len(historical_metrics))
+        self.model.fit(historical_metrics)
+        self.is_fitted = True
+        logger.info("MarketAnomalyDetector fit complete.")
+
+    def is_anomalous(self, today_metrics: dict) -> bool:
+        """
+        Check if today's market metrics represent an anomaly.
+        Returns True if anomalous (-1 from IsolationForest), False if normal.
+        """
+        if not self.is_fitted:
+            # Baseline synthetic fit if not fit yet
+            np.random.seed(42)
+            baseline = pd.DataFrame({
+                "rvol": np.random.lognormal(0.4, 0.5, 500),
+                "nifty_momentum": np.random.normal(0.1, 0.4, 500),
+                "volatility": np.random.normal(1.2, 0.3, 500)
+            })
+            self.fit(baseline)
+
+        try:
+            # Map today's metrics to columns expected by model
+            feature_keys = list(self.model.feature_names_in_) if hasattr(self.model, "feature_names_in_") else ["rvol", "nifty_momentum", "volatility"]
+            metric_vec = {}
+            for k in feature_keys:
+                metric_vec[k] = float(today_metrics.get(k, 1.0 if k == "rvol" else 0.0))
+
+            df_row = pd.DataFrame([metric_vec])
+            pred = self.model.predict(df_row)
+            is_anomaly = bool(pred[0] == -1)
+            if is_anomaly:
+                logger.warning("IsolationForest Market Anomaly Detected! Metrics: %s", today_metrics)
+            return is_anomaly
+        except Exception as exc:
+            logger.error("MarketAnomalyDetector inference error: %s", exc)
+            return False
+
+    def save_model(self, path: str) -> None:
+        """Save fitted IsolationForest model using joblib."""
+        try:
+            joblib.dump({"model": self.model, "is_fitted": self.is_fitted}, path)
+            logger.info("MarketAnomalyDetector saved to %s", path)
+        except Exception as exc:
+            logger.error("Failed to save MarketAnomalyDetector to %s: %s", path, exc)
+
+    def load_model(self, path: str) -> None:
+        """Load fitted IsolationForest model using joblib."""
+        if os.path.exists(path):
+            try:
+                data = joblib.load(path)
+                if isinstance(data, dict):
+                    self.model = data.get("model", self.model)
+                    self.is_fitted = data.get("is_fitted", True)
+                else:
+                    self.model = data
+                    self.is_fitted = True
+                logger.info("MarketAnomalyDetector loaded successfully from %s", path)
+            except Exception as exc:
+                logger.error("Failed to load MarketAnomalyDetector from %s: %s", path, exc)
 
 
 # ===========================================================================

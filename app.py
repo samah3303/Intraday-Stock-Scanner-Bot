@@ -35,7 +35,9 @@ from shared.constants import (
     DEFAULT_100_STOCKS, NIFTY_TOKEN,
     MIN_STOCK_PRICE, MAX_STOCK_PRICE, MAX_SCAN_STOCKS,
 )
-from shared.deepseek_analyzer import analyze_hit_with_deepseek
+from shared.deepseek_agent import analyze_hit_agent, generate_morning_brief, generate_trade_journal
+from ml_engine import MarketAnomalyDetector
+from trade_journal import log_trade_outcome, retrain_from_history
 
 # ---------------------------------------------------------------------------
 # Logging & In-Memory Log Ring Buffer (for Dashboard Live Terminal UI)
@@ -89,6 +91,8 @@ else:
 
 PREMARKET_CANDIDATES_FILE = os.path.join(data_dir, "premarket_candidates.json")
 PREMARKET_CANDIDATES: list[str] = []  # High-probability pre-filtered candidates (screened at 08:45 AM)
+TODAYS_TRADES: list[dict] = []        # Journal of completed trades today
+ANOMALY_DETECTOR = MarketAnomalyDetector()  # IsolationForest Market Anomaly Guard
 
 
 def load_premarket_candidates() -> list[str]:
@@ -501,6 +505,14 @@ def run_premarket_screening() -> list[str]:
         f"_Target universe for 09:20 AM scan: {cand_str if candidates else 'None'}_"
     )
     send_telegram_long(msg)
+    
+    # Generate & send DeepSeek morning brief
+    try:
+        brief = generate_morning_brief("BULLISH", {"candidates_count": len(candidates)})
+        send_telegram(brief)
+    except Exception as exc:
+        logger.warning("Morning brief generation failed: %s", exc)
+
     logger.info("── Pre-market screening complete: %d candidate(s) selected ──", len(candidates))
     return candidates
 
@@ -583,6 +595,15 @@ def _execute_strategy_scan_internal() -> None:
         logger.info("Scan aborted — Nifty 50 candle is bearish.")
         return
 
+    # ── Check Market Anomaly Detector ──────────────────────────────────
+    nifty_mom = float(((float(nifty_candle["close"]) - float(nifty_candle["open"])) / float(nifty_candle["open"])) * 100)
+    today_metrics = {"nifty_momentum": nifty_mom, "rvol": 1.2, "volatility": 1.0}
+    if ANOMALY_DETECTOR.is_anomalous(today_metrics):
+        msg_anomaly = "⚠️ *MARKET ANOMALY DETECTED*: IsolationForest model flagged extreme market volatility/anomaly. Signals paused today for capital protection."
+        send_telegram(msg_anomaly)
+        logger.warning("Scan aborted — Market Anomaly Detected by IsolationForest.")
+        return
+
     # ── Iterate and filter stocks ──────────────────────────────────────
     matching_hits: list[dict] = []
     scanned = 0
@@ -595,7 +616,7 @@ def _execute_strategy_scan_internal() -> None:
         stock_items = list(NSE_STOCKS.items())
 
     for name, token in stock_items:
-        if not SELECTED_STOCKS and scanned >= MAX_SCAN_STOCKS:
+        if scanned >= MAX_SCAN_STOCKS:
             break
 
         try:
@@ -612,7 +633,7 @@ def _execute_strategy_scan_internal() -> None:
             continue
 
         first_close = float(today_candles.iloc[0]["close"])
-        if not SELECTED_STOCKS and not (MIN_STOCK_PRICE <= first_close <= MAX_STOCK_PRICE):
+        if not (MIN_STOCK_PRICE <= first_close <= MAX_STOCK_PRICE):
             scanned += 1
             time.sleep(0.35)
             continue
@@ -622,11 +643,17 @@ def _execute_strategy_scan_internal() -> None:
         try:
             hit = evaluate_strategy(name, df, nifty_candle)
             if hit:
-                # Enrich hit with DeepSeek AI Model Evaluation
-                ai_eval = analyze_hit_with_deepseek(hit, nifty_bullish=True)
+                # Enrich hit with DeepSeek AI Agent Evaluation
+                ai_eval = analyze_hit_agent(hit, nifty_bullish=True)
                 hit["ai_analysis"] = ai_eval
-                matching_hits.append(hit)
-                logger.info("MATCH FOUND: %s (AI Score: %s) -> %s", name, ai_eval.get("score"), hit)
+                
+                if ai_eval.get("score", 0) >= 75 and ai_eval.get("recommendation", "BUY") == "BUY":
+                    matching_hits.append(hit)
+                    TODAYS_TRADES.append(hit)
+                    log_trade_outcome(name, hit, {"status": "TRIGGERED", "pnl_r": 0.0, "ai_score": ai_eval.get("score")})
+                    logger.info("MATCH APPROVED BY AGENT: %s (AI Score: %s) -> %s", name, ai_eval.get("score"), hit)
+                else:
+                    logger.info("MATCH REJECTED BY AGENT: %s (AI Score: %s)", name, ai_eval.get("score"))
         except Exception as exc:
             logger.debug("Evaluation error for %s: %s", name, exc)
 
@@ -1434,9 +1461,35 @@ def start_scheduler():
         name="Daily 09:20 AM Scan",
         replace_existing=True,
     )
+
+    # Post-market trade journal review Mon-Fri at 15:30 IST
+    def _run_post_market_journal():
+        try:
+            journal_msg = generate_trade_journal(TODAYS_TRADES)
+            send_telegram(journal_msg)
+            logger.info("Post-market trade journal sent to Telegram.")
+        except Exception as exc:
+            logger.error("Failed to generate post-market journal: %s", exc)
+
+    scheduler.add_job(
+        func=_run_post_market_journal,
+        trigger=CronTrigger(day_of_week="mon-fri", hour=15, minute=30, timezone=IST),
+        id="post_market_journal",
+        name="Daily 15:30 PM Post-Market Review",
+        replace_existing=True,
+    )
+
+    # Saturday ML retraining at 10:00 AM IST
+    scheduler.add_job(
+        func=retrain_from_history,
+        trigger=CronTrigger(day_of_week="sat", hour=10, minute=0, timezone=IST),
+        id="saturday_ml_retrain",
+        name="Saturday 10:00 AM ML Retrain",
+        replace_existing=True,
+    )
     
     scheduler.start()
-    logger.info("APScheduler started! Pre-market screening at 08:45 AM IST & Scan at 09:20 AM IST scheduled.")
+    logger.info("APScheduler started! 08:45 Pre-market, 09:20 Scan, 15:30 Journal, Sat 10:00 Retrain scheduled.")
 
 # Start the scheduler when the app starts
 start_scheduler()
