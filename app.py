@@ -34,8 +34,10 @@ from apscheduler.triggers.cron import CronTrigger
 from shared.constants import (
     DEFAULT_100_STOCKS, NIFTY_TOKEN,
     MIN_STOCK_PRICE, MAX_STOCK_PRICE, MAX_SCAN_STOCKS,
+    OPT_RVOL_MIN, OPT_WICK_MAX_PCT, OPT_AI_MIN_SCORE,
+    OPT_SECTOR_GUARD_ENABLED, WEAK_SECTORS,
 )
-from shared.deepseek_agent import analyze_hit_agent, generate_morning_brief, generate_trade_journal
+from shared.deepseek_agent import analyze_hit_agent, generate_morning_brief, generate_trade_journal, is_sector_blocked
 from ml_engine import MarketAnomalyDetector
 from trade_journal import log_trade_outcome, retrain_from_history
 
@@ -94,6 +96,11 @@ PREMARKET_CANDIDATES_FILE = os.path.join(data_dir, "premarket_candidates.json")
 PREMARKET_CANDIDATES: list[str] = []  # High-probability pre-filtered candidates (screened at 08:45 AM)
 TODAYS_TRADES: list[dict] = []        # Journal of completed trades today
 ANOMALY_DETECTOR = MarketAnomalyDetector()  # IsolationForest Market Anomaly Guard
+# Try loading pre-trained anomaly model from disk
+_anomaly_path = os.path.join(data_dir, "anomaly_detector.joblib")
+if os.path.exists(_anomaly_path):
+    ANOMALY_DETECTOR.load_model(_anomaly_path)
+    logger.info("Loaded anomaly detector from anomaly_detector.joblib.")
 
 
 def load_premarket_candidates() -> list[str]:
@@ -383,12 +390,13 @@ def evaluate_strategy(stock_name: str, df: pd.DataFrame,
     if c_open <= prev_close:
         return None
 
-    # ── RULE 3: Minimal Upper Rejection (Upper Wick Filter ≤ 50%) ─────
+    # ── RULE 3: Minimal Upper Rejection (Upper Wick Filter, optimized %) ─
     candle_range = c_high - c_low
     if candle_range <= 0:
         return None
     upper_wick = c_high - c_close
-    if upper_wick > (0.50 * candle_range):
+    wick_max_ratio = OPT_WICK_MAX_PCT / 100.0
+    if upper_wick > (wick_max_ratio * candle_range):
         return None
 
     # ── RULE 4: Price Range Filter (300 <= Open <= 3000) ───────────────
@@ -644,11 +652,18 @@ def _execute_strategy_scan_internal() -> None:
         try:
             hit = evaluate_strategy(name, df, nifty_candle)
             if hit:
+                # ── Sector Guard: skip stocks in weak sectors ────────
+                if is_sector_blocked(name):
+                    logger.info("SECTOR BLOCKED: %s (sector on weak-sectors list)", name)
+                    scanned += 1
+                    time.sleep(0.35)
+                    continue
+
                 # Enrich hit with DeepSeek AI Agent Evaluation
                 ai_eval = analyze_hit_agent(hit, nifty_bullish=True)
                 hit["ai_analysis"] = ai_eval
                 
-                if ai_eval.get("score", 0) >= 75 and ai_eval.get("recommendation", "BUY") == "BUY":
+                if ai_eval.get("score", 0) >= OPT_AI_MIN_SCORE and ai_eval.get("recommendation", "BUY") == "BUY":
                     matching_hits.append(hit)
                     TODAYS_TRADES.append(hit)
                     log_trade_outcome(name, hit, {"status": "TRIGGERED", "pnl_r": 0.0, "ai_score": ai_eval.get("score")})
@@ -675,20 +690,23 @@ def _execute_strategy_scan_internal() -> None:
     }
 
     # ── Send Telegram Group Alert ──────────────────────────────────────
-    universe_str = f"Custom Watchlist ({scanned} stocks)" if SELECTED_STOCKS else f"{scanned} stocks ({in_range} within ₹{int(MIN_STOCK_PRICE)}–₹{int(MAX_STOCK_PRICE)})"
+    universe_str = f"{scanned} pre-market candidate stocks ({in_range} within ₹{int(MIN_STOCK_PRICE)}–₹{int(MAX_STOCK_PRICE)})"
     if matching_hits:
         hit_lines = []
         for h in matching_hits:
             ai = h.get("ai_analysis", {})
             score = ai.get("score", 75)
             badge = "🔥 [HIGH]" if score >= 80 else ("⚡ [MED]" if score >= 70 else "⚠️ [LOW]")
+            strat_name = h.get("strategy_name", "6-Rule Open=Low Breakout")
+            strat_badge = h.get("badge", "⚡ [6-Rule OEL]")
             
             line = (
                 f"• *{h['symbol']}* {badge} AI Score: *{score}/100*\n"
+                f"  🎯 *Strategy*: `{strat_name}` {strat_badge}\n"
                 f"  O:₹{h['open']} H:₹{h['high']} L:₹{h['low']} C:₹{h['close']} | EMA20:₹{h['ema20']}\n"
                 f"  📍 *Entry*: ₹{ai.get('entry', h['close'])} | 🛑 *SL*: ₹{ai.get('stop_loss', 'N/A')}\n"
                 f"  🎯 *T1*: ₹{ai.get('target_1', 'N/A')} | 🎯 *T2*: ₹{ai.get('target_2', 'N/A')}\n"
-                f"  💡 _{ai.get('reasoning', 'Passed 6 structural rules.')}_"
+                f"  💡 _{ai.get('reasoning', 'Passed quantitative rules.')}_"
             )
             hit_lines.append(line)
 
@@ -710,39 +728,6 @@ def _execute_strategy_scan_internal() -> None:
 
     send_telegram_long(telegram_msg)
     logger.info("── Scan complete: %d hits found out of %d scanned ──", len(matching_hits), scanned)
-
-
-# ---------------------------------------------------------------------------
-# APScheduler Setup (local only — Vercel uses its own cron in vercel.json)
-# ---------------------------------------------------------------------------
-IS_VERCEL = bool(os.getenv("VERCEL"))
-
-if not IS_VERCEL:
-    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-
-    # Auto-login at 08:45 AM IST every weekday
-    scheduler.add_job(
-        automate_angel_login,
-        CronTrigger(day_of_week="mon-fri", hour=8, minute=45, timezone="Asia/Kolkata"),
-        id="daily_login",
-        replace_existing=True,
-        misfire_grace_time=300,
-    )
-
-    # Execute Strategy Scan at 09:20 AM IST every weekday
-    scheduler.add_job(
-        run_strategy_scan,
-        CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Kolkata"),
-        id="daily_scan",
-        replace_existing=True,
-        misfire_grace_time=300,
-    )
-
-    scheduler.start()
-    logger.info("APScheduler started – active jobs: %s", [j.id for j in scheduler.get_jobs()])
-else:
-    logger.info("Running on Vercel — skipping APScheduler (cron handled by vercel.json)")
-    scheduler = None
 
 # ---------------------------------------------------------------------------
 # Control Panel HTML UI (Embedded Glassmorphic Dark Theme)
@@ -1321,9 +1306,49 @@ def start_scheduler():
     # Post-market trade journal review Mon-Fri at 15:30 IST
     def _run_post_market_journal():
         try:
-            journal_msg = generate_trade_journal(TODAYS_TRADES)
+            completed_outcomes = []
+            for t in TODAYS_TRADES:
+                sym = t.get("symbol")
+                ai = t.get("ai_analysis", {})
+                entry = ai.get("entry", t.get("close", 1000.0))
+                sl = ai.get("stop_loss", entry * 0.99)
+                t1 = ai.get("target_1", entry * 1.02)
+                
+                token = NSE_STOCKS.get(sym)
+                pnl_r = 0.0
+                if token:
+                    try:
+                        df = fetch_candles(token, days_back=1)
+                        if not df.empty:
+                            eod_close = float(df.iloc[-1]["close"])
+                            day_high = float(df["high"].max())
+                            day_low = float(df["low"].min())
+                            risk = max(entry - sl, 0.5)
+                            
+                            if day_low <= sl:
+                                pnl_r = -1.0
+                            elif day_high >= t1:
+                                pnl_r = 2.0
+                            else:
+                                pnl_r = round((eod_close - entry) / risk, 2)
+                    except Exception:
+                        pass
+
+                outcome_dict = {"status": "CLOSED", "pnl_r": pnl_r, "ai_score": ai.get("score", 75)}
+                feats = {
+                    "rvol": t.get("rvol", 1.2),
+                    "gap_pct": t.get("gap_pct", 0.5),
+                    "upper_wick_pct": t.get("wick_pct", 10.0),
+                    "price_level": t.get("close", 1000.0)
+                }
+                log_trade_outcome(sym, feats, outcome_dict)
+                t["outcome"] = outcome_dict
+                t["pnl_r"] = pnl_r
+                completed_outcomes.append(t)
+
+            journal_msg = generate_trade_journal(completed_outcomes)
             send_telegram(journal_msg)
-            logger.info("Post-market trade journal sent to Telegram.")
+            logger.info("Post-market trade journal and outcome logging complete for %d trade(s).", len(completed_outcomes))
         except Exception as exc:
             logger.error("Failed to generate post-market journal: %s", exc)
 
