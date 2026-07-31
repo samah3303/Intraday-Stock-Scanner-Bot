@@ -585,23 +585,28 @@ def _execute_strategy_scan_internal() -> None:
 
     nifty_candle = nifty_today.iloc[0]
 
-    # Early exit if Nifty index is bearish
-    if float(nifty_candle["close"]) <= float(nifty_candle["open"]):
+    # ── Check Market Trend Alignment (Nifty Benchmark) ─────────────────
+    n_open = float(nifty_candle["open"])
+    n_close = float(nifty_candle["close"])
+    n_change_pct = ((n_close - n_open) / n_open) * 100.0
+
+    # Allow scan if Nifty is flat/neutral (drop <= -0.15%). Only abort on significant market selling (drop > -0.15%)
+    if n_change_pct < -0.15:
         msg_bearish = (
             f"🔍 *Structural OEL Scanner*\n"
             f"📅 *{datetime.now(IST):%d %b %Y %H:%M} IST*\n\n"
-            f"⚠️ *Scan Aborted*: Nifty 50 benchmark is bearish on 09:15 candle "
-            f"(Close {nifty_candle['close']} ≤ Open {nifty_candle['open']})."
+            f"⚠️ *Scan Aborted*: Nifty 50 benchmark is in a heavy market decline today "
+            f"({n_change_pct:.2f}% drop: Close {n_close} vs Open {n_open})."
         )
         send_telegram(msg_bearish)
         LATEST_SCAN_RESULTS = {
-            "status": "Aborted — Nifty index bearish",
+            "status": f"Aborted — Heavy Nifty market drop ({n_change_pct:.2f}%)",
             "timestamp": scan_time_str,
             "scanned": 0,
             "in_range": 0,
             "hits": [],
         }
-        logger.info("Scan aborted — Nifty 50 candle is bearish.")
+        logger.info("Scan aborted — Nifty 50 benchmark heavy decline (%.2f%%).", n_change_pct)
         return
 
     # ── Check Market Anomaly Detector ──────────────────────────────────
