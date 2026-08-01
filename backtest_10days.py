@@ -56,12 +56,7 @@ CAPITAL = 100000.0
 RISK_PCT = 0.01               # 1% risk per trade (Rs 1,000)
 AI_MIN_SCORE = 75             # AI Quality Score threshold (>= 75 required)
 
-# Load selected stocks watchlist
-if os.path.exists("selected_stocks.json"):
-    with open("selected_stocks.json", "r", encoding="utf-8") as f:
-        STOCK_UNIVERSE = json.load(f)
-else:
-    STOCK_UNIVERSE = list(DEFAULT_100_STOCKS)
+STOCK_UNIVERSE = list(DEFAULT_100_STOCKS)
 
 
 # ── Telegram Helper ──

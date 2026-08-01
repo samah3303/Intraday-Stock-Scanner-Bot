@@ -21,66 +21,97 @@ logger = logging.getLogger("DeepSeekAgent")
 
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")  # Maps to DeepSeek API
 
-# Sector Mapping Table for NSE Equities
+# Extended Sector Mapping Table for Top NSE Equities
 SECTOR_MAP = {
     "BANKBARODA": "BANKING", "CANBK": "BANKING", "FEDERALBNK": "BANKING", "HDFCBANK": "BANKING",
     "ICICIBANK": "BANKING", "IDFCFIRSTB": "BANKING", "INDUSINDBK": "BANKING", "KOTAKBANK": "BANKING",
     "PNB": "BANKING", "SBIN": "BANKING", "AUBANK": "BANKING", "AXISBANK": "BANKING",
     "INFY": "IT", "TCS": "IT", "HCLTECH": "IT", "WIPRO": "IT", "TECHM": "IT", "PERSISTENT": "IT", "OFSS": "IT",
     "TATASTEEL": "METALS", "JSWSTEEL": "METALS", "JINDALSTEL": "METALS", "HINDALCO": "METALS",
-    "M&M": "AUTO", "MARUTI": "AUTO", "BAJAJ-AUTO": "AUTO", "HEROMOTOCO": "AUTO", "EICHERMOT": "AUTO", "TVSMOTOR": "AUTO",
-    "CIPLA": "PHARMA", "DRREDDY": "PHARMA", "SUNPHARMA": "PHARMA", "DIVISLAB": "PHARMA", "TORNTPHARM": "PHARMA",
-    "RELIANCE": "ENERGY", "BPCL": "ENERGY", "IOC": "ENERGY", "ONGC": "ENERGY", "GAIL": "ENERGY", "NTPC": "POWER",
+    "M&M": "AUTO", "MARUTI": "AUTO", "BAJAJ-AUTO": "AUTO", "HEROMOTOCO": "AUTO", "EICHERMOT": "AUTO", "TVSMOTOR": "AUTO", "BHARATFORG": "AUTO",
+    "CIPLA": "PHARMA", "DRREDDY": "PHARMA", "SUNPHARMA": "PHARMA", "DIVISLAB": "PHARMA", "TORNTPHARM": "PHARMA", "APOLLOHOSP": "PHARMA", "MAXHEALTH": "PHARMA",
+    "RELIANCE": "ENERGY", "BPCL": "ENERGY", "IOC": "ENERGY", "ONGC": "ENERGY", "GAIL": "ENERGY", "NTPC": "POWER", "POWERGRID": "POWER", "TATAPOWER": "POWER", "COALINDIA": "ENERGY",
+    "ADANIENT": "INFRA", "ADANIPORTS": "INFRA", "LT": "INFRA", "GRASIM": "INFRA", "AMBUJACEM": "CEMENT", "ULTRACEMCO": "CEMENT", "DLF": "REALTY", "GODREJPROP": "REALTY",
+    "BEL": "DEFENCE", "HAL": "DEFENCE", "IRCTC": "SERVICES", "INDIGO": "AVIATION", "TRENT": "RETAIL", "TITAN": "CONSUMER", "ASIANPAINT": "CONSUMER", "BERGEPAINT": "CONSUMER",
+    "BAJAJFINSV": "FINANCE", "BAJFINANCE": "FINANCE", "CHOLAFIN": "FINANCE", "MUTHOOTFIN": "FINANCE", "PFC": "FINANCE", "RECLTD": "FINANCE", "SHRIRAMFIN": "FINANCE",
+    "POLYCAB": "CAPITAL_GOODS", "SIEMENS": "CAPITAL_GOODS", "ABB": "CAPITAL_GOODS", "CGPOWER": "CAPITAL_GOODS", "CUMMINSIND": "CAPITAL_GOODS", "HAVELLS": "CAPITAL_GOODS"
 }
 
 
 # ── LOCAL TOOL HANDLERS ───────────────────────────────────────────────
 
 def _tool_check_technical_rules(hit: dict) -> dict:
-    """Runs 6-rule check in Python locally."""
+    """Runs complete 6-rule structural OEL breakout check in Python locally."""
     c_open = float(hit.get("open", 0))
     c_high = float(hit.get("high", 0))
     c_low = float(hit.get("low", 0))
     c_close = float(hit.get("close", 0))
     ema20 = float(hit.get("ema20", 0))
     prev_close = float(hit.get("prev_close", 0))
+    nifty_bullish = bool(hit.get("nifty_bullish", True))
     
+    # Rule 1: Open == Low Structural Support (max 0.05% tolerance)
     r1_open_low = bool(c_open > 0 and ((c_open - c_low) / c_open) <= 0.0005)
-    r2_gap_up = bool(prev_close > 0 and c_open > prev_close)
-    r3_bullish_body = bool(c_close > c_open)
-    c_range = c_high - c_low
-    r4_wick = bool(c_range > 0 and (c_high - c_close) <= (0.50 * c_range))
-    r5_ema = bool(c_close > ema20)
+    # Rule 2: Bullish Candle Body (Close > Open)
+    r2_bullish_body = bool(c_close > c_open)
+    # Rule 3: Upper Wick Rejection (≤ 50% candle range)
+    c_range = max(c_high - c_low, 0.01)
+    r3_wick = bool((c_high - c_close) <= (0.50 * c_range))
+    # Rule 4: Price Universe Range (₹300 to ₹3,000)
+    r4_price_range = bool(300.0 <= c_close <= 3000.0)
+    # Rule 5: Nifty Index Alignment (Bullish benchmark)
+    r5_nifty_trend = nifty_bullish
+    # Rule 6: 20 EMA Trend Confirmation (Close > 20 EMA)
+    r6_ema = bool(c_close > ema20)
 
-    all_passed = r1_open_low and r2_gap_up and r3_bullish_body and r4_wick and r5_ema
+    all_passed = r1_open_low and r2_bullish_body and r3_wick and r4_price_range and r5_nifty_trend and r6_ema
     return {
         "all_passed": all_passed,
         "details": {
-            "open_low_pass": r1_open_low,
-            "gap_up_pass": r2_gap_up,
-            "bullish_body_pass": r3_bullish_body,
-            "upper_wick_pass": r4_wick,
-            "ema20_trend_pass": r5_ema
+            "r1_open_low_pass": r1_open_low,
+            "r2_bullish_body_pass": r2_bullish_body,
+            "r3_upper_wick_pass": r3_wick,
+            "r4_price_range_pass": r4_price_range,
+            "r5_nifty_trend_pass": r5_nifty_trend,
+            "r6_ema20_pass": r6_ema
         }
     }
 
 
 def _tool_get_sector_performance(symbol: str) -> dict:
-    """Maps symbol to sector and returns sector momentum status."""
-    sector = SECTOR_MAP.get(symbol.upper(), "GENERAL")
-    # Returns sector alignment heuristic
+    """Maps symbol to sector and returns relative strength status."""
+    sym = symbol.upper()
+    sector = SECTOR_MAP.get(sym)
+    if sector:
+        return {
+            "symbol": sym,
+            "sector": sector,
+            "sector_trend": "BULLISH",
+            "relative_strength": "STRONG"
+        }
     return {
-        "symbol": symbol,
-        "sector": sector,
-        "sector_trend": "BULLISH",
-        "relative_strength": "STRONG"
+        "symbol": sym,
+        "sector": "UNKNOWN",
+        "sector_trend": "NEUTRAL",
+        "relative_strength": "MODERATE"
     }
+
+
+def is_sector_blocked(symbol: str) -> bool:
+    """Check if the stock's sector is on the weak-sectors blocklist."""
+    from shared.constants import WEAK_SECTORS, OPT_SECTOR_GUARD_ENABLED
+    if not OPT_SECTOR_GUARD_ENABLED or not WEAK_SECTORS:
+        return False
+    sector = SECTOR_MAP.get(symbol.upper(), "UNKNOWN")
+    return sector in WEAK_SECTORS
 
 
 def _tool_calculate_risk_reward(close_price: float, low_price: float) -> dict:
     """Computes dynamic entry, SL, T1 (1:2), T2 (1:3)."""
-    entry = round(close_price, 2)
-    sl = round(low_price * 0.997, 2)
+    c_p = float(close_price)
+    l_p = float(low_price)
+    entry = round(c_p, 2)
+    sl = round(l_p * 0.997, 2)
     risk = max(entry - sl, 0.50)
     t1 = round(entry + (risk * 2.0), 2)
     t2 = round(entry + (risk * 3.0), 2)

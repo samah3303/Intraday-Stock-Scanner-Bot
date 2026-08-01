@@ -54,8 +54,8 @@ async def handle_list_tools() -> list[types.Tool]:
             inputSchema={"type": "object", "properties": {}}
         ),
         types.Tool(
-            name="get_watchlist",
-            description="Fetch today's pre-market screened bullish candidate stocks.",
+            name="get_premarket_candidates",
+            description="Fetch today's 08:45 AM pre-market screened candidate stocks.",
             inputSchema={"type": "object", "properties": {}}
         ),
         types.Tool(
@@ -117,7 +117,7 @@ async def handle_call_tool(
         recent_logs = SYSTEM_LOGS[-50:] if SYSTEM_LOGS else []
         return [types.TextContent(type="text", text="\n".join(recent_logs))]
 
-    elif name == "get_watchlist":
+    elif name in ("get_premarket_candidates", "get_watchlist"):
         from app import PREMARKET_CANDIDATES
         return [types.TextContent(type="text", text=json.dumps({"candidates": PREMARKET_CANDIDATES, "count": len(PREMARKET_CANDIDATES)}, indent=2))]
 

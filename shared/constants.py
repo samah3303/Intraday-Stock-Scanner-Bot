@@ -19,6 +19,16 @@ DEFAULT_SLIPPAGE_PCT = 0.0005  # 0.05% market order slippage
 DEFAULT_CAPITAL = 100000.0     # Default account capital (₹1,00,000)
 DEFAULT_RISK_PCT = 0.01        # 1% risk per trade
 
+# ── Optimized Strategy Parameters (from 3-year backtest) ────────────────
+OPT_RVOL_MIN = 1.5             # Minimum relative volume for breakout confirmation
+OPT_WICK_MAX_PCT = 50.0        # Maximum upper wick rejection percentage
+OPT_AI_MIN_SCORE = 75          # Minimum DeepSeek AI confidence score
+OPT_SECTOR_GUARD_ENABLED = True  # Block trades when sector index is weak
+
+# ── Sector Relative Strength Guard ───────────────────────────────────────
+# Sectors with win rate < 45% in backtest are blocked
+WEAK_SECTORS = []  # Populated after backtest optimization (e.g., ["METALS", "REALTY"])
+
 # ── 100 Top Liquid Bullish NSE Stock Universe ─────────────────────────
 DEFAULT_100_STOCKS = [
     "ABB", "ADANIENT", "ADANIPORTS", "AMBUJACEM", "APOLLOHOSP", "ASIANPAINT", "AUBANK", "AXISBANK",

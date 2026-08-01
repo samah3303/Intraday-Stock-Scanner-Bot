@@ -265,7 +265,7 @@ class OELSetupClassifier:
             logger.error("Failed to save model to %s: %s", path, exc)
 
     def load_model(self, path: str) -> None:
-        """Load calibrated model from disk using joblib."""
+        """Load model from disk with dual-format fallback (joblib or native XGBoost/LightGBM JSON)."""
         if os.path.exists(path):
             try:
                 data = joblib.load(path)
@@ -275,9 +275,15 @@ class OELSetupClassifier:
                 else:
                     self.calibrated_model = data
                     self.is_trained = True
-                logger.info("Calibrated model loaded successfully from %s", path)
-            except Exception as exc:
-                logger.error("Failed to load model from %s: %s", path, exc)
+                logger.info("Calibrated model loaded successfully from %s (joblib format)", path)
+            except Exception:
+                try:
+                    if self.base_model and hasattr(self.base_model, "load_model"):
+                        self.base_model.load_model(path)
+                        self.is_trained = True
+                        logger.info("Native model loaded successfully from %s (XGBoost JSON format)", path)
+                except Exception as exc:
+                    logger.error("Failed to load model from %s: %s", path, exc)
 
     @staticmethod
     def generate_synthetic_training_data(n_samples: int = 5000) -> Tuple[pd.DataFrame, pd.Series]:
@@ -506,11 +512,15 @@ class OELTradingPipeline:
         self.classifier = OELSetupClassifier(model_type="xgboost")
         self.risk_manager = DynamicRiskManager()
 
-        # Auto-train on synthetic data if no pre-trained model exists
-        model_path = os.path.join(os.path.dirname(__file__), "oel_model.json")
-        if os.path.exists(model_path):
-            self.classifier.load_model(model_path)
-            logger.info("Loaded pre-trained ML model from disk.")
+        # Load pre-trained calibrated model (joblib), fall back to legacy JSON
+        model_path_joblib = os.path.join(os.path.dirname(__file__), "oel_model.joblib")
+        model_path_json = os.path.join(os.path.dirname(__file__), "oel_model.json")
+        if os.path.exists(model_path_joblib):
+            self.classifier.load_model(model_path_joblib)
+            logger.info("Loaded calibrated ML model from oel_model.joblib.")
+        elif os.path.exists(model_path_json):
+            self.classifier.load_model(model_path_json)
+            logger.info("Loaded legacy ML model from oel_model.json.")
         
         if not self.classifier.is_trained:
             logger.info("No pre-trained model found. Training on synthetic data...")
